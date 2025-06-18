@@ -19,7 +19,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
-      <body className={inter.className}>
+      <body className={inter.className} suppressHydrationWarning>
         {children}
         <Toaster position="top-right" richColors />
       </body>

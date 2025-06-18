@@ -10,10 +10,16 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { FileSpreadsheet, Download, CheckCircle, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
-import { GoogleSheetsIntegration } from "../lib/google-sheets"
+import { ClientGoogleAuth } from "../lib/client-google-auth"
 import { LoadingSpinner } from "./loading-spinner"
 import type { TabData } from "../types"
-import { createTabAction } from "../app/actions"
+import {
+  getSpreadsheetInfoAction,
+  getSheetDataAction,
+  importGoogleSheetAction,
+  extractSpreadsheetIdAction,
+  checkGoogleApiConfigAction,
+} from "../app/google-sheets-actions"
 
 interface GoogleSheetsImportProps {
   onImportComplete: () => void
@@ -27,40 +33,30 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
   const [selectedSheet, setSelectedSheet] = useState<string>("")
   const [previewData, setPreviewData] = useState<TabData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [isClient, setIsClient] = useState(false)
-  const [sheetsIntegration, setSheetsIntegration] = useState<GoogleSheetsIntegration | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [googleAuth] = useState(() => new ClientGoogleAuth())
+  const [apiConfig, setApiConfig] = useState<any>(null)
 
-  // Fix hydration issue by ensuring client-side only rendering
+  // Fix hydration issue and check API configuration
   useEffect(() => {
-    setIsClient(true)
-    if (process.env.NEXT_PUBLIC_GOOGLE_API_KEY) {
-      setSheetsIntegration(new GoogleSheetsIntegration(process.env.NEXT_PUBLIC_GOOGLE_API_KEY))
-    }
+    setMounted(true)
+    checkGoogleApiConfigAction().then(setApiConfig)
   }, [])
 
   const handleUrlSubmit = async () => {
-    if (!sheetsIntegration) {
-      toast.error("Google Sheets integration not initialized")
-      return
-    }
-
     setError(null)
 
-    // Check if environment variables are configured
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
-
-    if (!clientId || !apiKey) {
+    if (!apiConfig?.isConfigured) {
       const missingVars = []
-      if (!clientId) missingVars.push("NEXT_PUBLIC_GOOGLE_CLIENT_ID")
-      if (!apiKey) missingVars.push("NEXT_PUBLIC_GOOGLE_API_KEY")
+      if (!apiConfig?.hasClientId) missingVars.push("NEXT_PUBLIC_GOOGLE_CLIENT_ID")
+      if (!apiConfig?.hasApiKey) missingVars.push("GOOGLE_API_KEY")
 
       setError(`Configuração do Google API não encontrada. Variáveis necessárias: ${missingVars.join(", ")}`)
       toast.error("Google API não configurado. Verifique as variáveis de ambiente.")
       return
     }
 
-    const spreadsheetId = GoogleSheetsIntegration.extractSpreadsheetId(spreadsheetUrl)
+    const spreadsheetId = extractSpreadsheetIdAction(spreadsheetUrl)
     if (!spreadsheetId) {
       toast.error("URL inválida. Use uma URL do Google Sheets.")
       return
@@ -69,42 +65,88 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
     setStep("auth")
 
     try {
-      const authenticated = await sheetsIntegration.authenticate()
-      if (!authenticated) {
+      const accessToken = await googleAuth.authenticate()
+      if (!accessToken) {
         throw new Error("Falha na autenticação com Google")
       }
 
-      const info = await sheetsIntegration.getSpreadsheetInfo(spreadsheetId)
+      const info = await getSpreadsheetInfoAction(spreadsheetId, accessToken)
       setSpreadsheetInfo(info)
       setStep("sheets")
     } catch (error: any) {
       console.error("Erro na autenticação:", error)
 
-      // Handle specific OAuth errors
+      // Handle specific OAuth errors with detailed instructions
       if (error.message.includes("redirect_uri_mismatch")) {
-        setError(
-          "Erro de configuração OAuth: O redirect URI não está configurado corretamente no Google Cloud Console. Adicione o domínio atual às URIs autorizadas.",
-        )
+        setError(`
+Erro de configuração OAuth: redirect_uri_mismatch
+
+INSTRUÇÕES PARA RESOLVER:
+
+1. Acesse: https://console.cloud.google.com/
+2. Vá para "APIs e Serviços" > "Credenciais"
+3. Clique na sua credencial OAuth 2.0
+4. Na seção "URIs de redirecionamento autorizados", adicione:
+
+   • ${mounted ? window.location.origin : "https://seu-dominio.com"}
+   • ${mounted ? window.location.origin + "/" : "https://seu-dominio.com/"}
+   • http://localhost:3000
+   • https://localhost:3000
+
+5. Salve e aguarde alguns minutos
+6. Tente novamente
+
+Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
+    `)
       } else {
         setError(error.message || "Erro ao acessar planilha")
       }
 
       setStep("url")
-      toast.error(error.message || "Erro ao acessar planilha")
+      toast.error("Erro de configuração OAuth. Verifique as instruções abaixo.")
     }
   }
 
   const handleSheetSelect = async (sheetName: string) => {
-    if (!sheetsIntegration) return
-
     setSelectedSheet(sheetName)
 
     try {
-      const spreadsheetId = GoogleSheetsIntegration.extractSpreadsheetId(spreadsheetUrl)!
-      const data = await sheetsIntegration.getSheetData(spreadsheetId, sheetName)
-      const tabData = sheetsIntegration.convertToTabData(sheetName, data)
-      setPreviewData(tabData)
-      setStep("preview")
+      const spreadsheetId = extractSpreadsheetIdAction(spreadsheetUrl)!
+      const accessToken = googleAuth.getAccessToken()
+
+      if (!accessToken) {
+        throw new Error("Token de acesso não encontrado")
+      }
+
+      const data = await getSheetDataAction(spreadsheetId, sheetName, accessToken)
+
+      // Convert the server response back to preview format
+      if (data.length > 0) {
+        const headers = data[0]
+        const rows = data.slice(1)
+
+        const previewTabData: TabData = {
+          id: `preview-${Date.now()}`,
+          name: sheetName,
+          columns: headers.map((header, index) => ({
+            key: header.toLowerCase().replace(/[^a-z0-9]/g, "_"),
+            label: header,
+            type: "text" as const,
+            width: 150,
+          })),
+          rows: rows.slice(0, 5).map((row, index) => {
+            const rowData: any = { id: `preview-${index}` }
+            headers.forEach((header, colIndex) => {
+              const key = header.toLowerCase().replace(/[^a-z0-9]/g, "_")
+              rowData[key] = row[colIndex] || ""
+            })
+            return rowData
+          }),
+        }
+
+        setPreviewData(previewTabData)
+        setStep("preview")
+      }
     } catch (error: any) {
       toast.error(error.message || "Erro ao carregar dados da aba")
     }
@@ -116,9 +158,18 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
     setStep("importing")
 
     try {
-      const result = await createTabAction(previewData)
+      const spreadsheetId = extractSpreadsheetIdAction(spreadsheetUrl)!
+      const accessToken = googleAuth.getAccessToken()
+
+      if (!accessToken) {
+        throw new Error("Token de acesso não encontrado")
+      }
+
+      const data = await getSheetDataAction(spreadsheetId, selectedSheet, accessToken)
+      const result = await importGoogleSheetAction(selectedSheet, data)
+
       if (result.success) {
-        toast.success(`Aba "${previewData.name}" importada com sucesso!`)
+        toast.success(`Aba "${selectedSheet}" importada com sucesso!`)
         setIsOpen(false)
         onImportComplete()
         resetState()
@@ -126,8 +177,8 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
         toast.error("Erro ao importar dados")
         setStep("preview")
       }
-    } catch (error) {
-      toast.error("Erro ao importar dados")
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao importar dados")
       setStep("preview")
     }
   }
@@ -171,7 +222,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
                   <div>2. Crie um projeto e ative a Google Sheets API</div>
                   <div>3. Configure as credenciais OAuth 2.0</div>
                   <div>
-                    4. Adicione {isClient ? window.location.origin : "seu-dominio"} às URIs de redirecionamento
+                    4. Adicione {mounted ? window.location.origin : "seu-dominio"} às URIs de redirecionamento
                     autorizadas
                   </div>
                   <div>5. Adicione as variáveis de ambiente no seu projeto</div>
@@ -183,7 +234,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
               Conectar Planilha
             </Button>
 
-            {isClient && !process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID && (
+            {mounted && !apiConfig?.isConfigured && (
               <div className="text-xs text-amber-600 p-2 bg-amber-50 rounded-md border border-amber-200">
                 ⚠️ Google API não configurado. Esta funcionalidade requer configuração adicional.
               </div>
@@ -241,7 +292,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
               <h3 className="font-medium mb-2">Preview: {previewData?.name}</h3>
               <div className="flex items-center space-x-4 text-sm text-gray-600">
                 <span>{previewData?.columns.length} colunas</span>
-                <span>{previewData?.rows.length} registros</span>
+                <span>{previewData?.rows.length}+ registros</span>
               </div>
             </div>
 
@@ -310,9 +361,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
           <div className="text-center space-y-4">
             <LoadingSpinner size="lg" />
             <p>Importando dados...</p>
-            <p className="text-sm text-gray-500">
-              Criando aba e inserindo {previewData?.rows.length} registros no banco de dados.
-            </p>
+            <p className="text-sm text-gray-500">Criando aba e inserindo registros no banco de dados.</p>
           </div>
         )
 
@@ -321,13 +370,14 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
     }
   }
 
-  // Don't render until client-side to avoid hydration issues
-  if (!isClient) {
+  // Show consistent loading state during hydration
+  if (!mounted) {
     return (
       <Button
         variant="outline"
         disabled
         className="border-2 border-dashed border-gray-300 text-gray-400 cursor-not-allowed"
+        suppressHydrationWarning
       >
         <FileSpreadsheet className="w-4 h-4 mr-2" />
         Carregando...
@@ -347,6 +397,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
         <Button
           variant="outline"
           className="border-2 border-dashed border-green-300 hover:border-green-500 hover:bg-green-50 text-green-600 hover:text-green-700"
+          suppressHydrationWarning
         >
           <FileSpreadsheet className="w-4 h-4 mr-2" />
           Importar do Google Sheets
@@ -360,7 +411,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
           </DialogTitle>
         </DialogHeader>
 
-        <div className="py-4">
+        <div className="py-4" suppressHydrationWarning>
           {/* Progress indicator */}
           <div className="flex items-center justify-center space-x-2 mb-6">
             {["url", "auth", "sheets", "preview", "importing"].map((stepName, index) => (
