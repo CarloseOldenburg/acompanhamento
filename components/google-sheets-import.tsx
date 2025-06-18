@@ -1,16 +1,21 @@
 "use client"
 
-import { DialogTrigger } from "@/components/ui/dialog"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { FileSpreadsheet, Download, CheckCircle, AlertTriangle, Clock } from "lucide-react"
+import { FileSpreadsheet, Download, CheckCircle, AlertTriangle, Clock, Bug } from "lucide-react"
 import { toast } from "sonner"
 import { ClientGoogleAuth } from "../lib/client-google-auth"
 import { LoadingSpinner } from "./loading-spinner"
@@ -39,12 +44,28 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
   const [googleAuth] = useState(() => new ClientGoogleAuth())
   const [apiConfig, setApiConfig] = useState<any>(null)
   const [authTimeout, setAuthTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [debugInfo, setDebugInfo] = useState<any>(null)
 
   // Fix hydration issue and check API configuration
   useEffect(() => {
     setMounted(true)
-    checkGoogleApiConfigAction().then(setApiConfig)
+    checkGoogleApiConfigAction().then((config) => {
+      setApiConfig(config)
+      setDebugInfo(config)
+    })
   }, [])
+
+  // Test server configuration
+  const testServerConfig = async () => {
+    try {
+      const response = await fetch("/api/test-google-config")
+      const data = await response.json()
+      setDebugInfo(data)
+      console.log("Server config test:", data)
+    } catch (error) {
+      console.error("Error testing server config:", error)
+    }
+  }
 
   const handleUrlSubmit = async () => {
     setError(null)
@@ -64,6 +85,8 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
       toast.error("URL inválida. Use uma URL do Google Sheets.")
       return
     }
+
+    console.log("Extracted spreadsheet ID:", spreadsheetId)
 
     setStep("auth")
 
@@ -90,14 +113,20 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
         throw new Error("Falha na autenticação com Google")
       }
 
-      console.log("Authentication successful, fetching spreadsheet info...")
+      console.log("Authentication successful, access token length:", accessToken.length)
+      console.log("Fetching spreadsheet info...")
 
       try {
         const info = await getSpreadsheetInfoAction(spreadsheetId, accessToken)
+        console.log("Spreadsheet info received:", info)
         setSpreadsheetInfo(info)
         setStep("sheets")
       } catch (apiError: any) {
-        console.error("API Error:", apiError)
+        console.error("API Error details:", {
+          message: apiError.message,
+          name: apiError.name,
+          stack: apiError.stack,
+        })
 
         // Handle specific API errors
         if (apiError.message.includes("403") || apiError.message.includes("Acesso negado")) {
@@ -114,6 +143,11 @@ SOLUÇÕES:
 
 URL da planilha: ${spreadsheetUrl}
 ID extraído: ${spreadsheetId}
+
+DEBUG INFO:
+- Client ID configurado: ${apiConfig?.hasClientId ? "Sim" : "Não"}
+- API Key configurado: ${apiConfig?.hasApiKey ? "Sim" : "Não"}
+- Token length: ${accessToken.length}
           `)
         } else if (apiError.message.includes("404") || apiError.message.includes("não encontrada")) {
           setError(`
@@ -139,6 +173,9 @@ INFORMAÇÕES DE DEBUG:
 - URL: ${spreadsheetUrl}
 - ID: ${spreadsheetId}
 - Token: ${accessToken ? "Presente" : "Ausente"}
+- Token length: ${accessToken?.length || 0}
+- Client ID: ${apiConfig?.hasClientId ? "Configurado" : "Não configurado"}
+- API Key: ${apiConfig?.hasApiKey ? "Configurado" : "Não configurado"}
 
 Tente novamente ou verifique se:
 1. A Google Sheets API está habilitada
@@ -171,10 +208,10 @@ INSTRUÇÕES PARA RESOLVER:
 3. Clique na sua credencial OAuth 2.0
 4. Na seção "URIs de redirecionamento autorizados", adicione:
 
- • ${mounted ? window.location.origin : "https://seu-dominio.com"}
- • ${mounted ? window.location.origin + "/" : "https://seu-dominio.com/"}
- • http://localhost:3000
- • https://localhost:3000
+• ${mounted ? window.location.origin : "https://seu-dominio.com"}
+• ${mounted ? window.location.origin + "/" : "https://seu-dominio.com/"}
+• http://localhost:3000
+• https://localhost:3000
 
 5. Salve e aguarde alguns minutos
 6. Tente novamente
@@ -295,6 +332,25 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
               />
               <p className="text-sm text-gray-500 mt-1">Cole a URL completa da sua planilha do Google Sheets</p>
             </div>
+
+            {/* Debug Info */}
+            {debugInfo && (
+              <div className="text-xs bg-gray-50 p-3 rounded border">
+                <div className="flex items-center gap-2 mb-2">
+                  <Bug className="w-4 h-4" />
+                  <span className="font-medium">Informações de Debug</span>
+                  <Button variant="outline" size="sm" onClick={testServerConfig}>
+                    Testar Config
+                  </Button>
+                </div>
+                <div className="space-y-1">
+                  <div>Client ID: {debugInfo.hasClientId ? "✅ Configurado" : "❌ Não configurado"}</div>
+                  <div>API Key: {debugInfo.hasApiKey ? "✅ Configurado" : "❌ Não configurado"}</div>
+                  <div>Client ID Length: {debugInfo.clientIdLength || 0}</div>
+                  <div>API Key Length: {debugInfo.apiKeyLength || 0}</div>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="text-sm text-red-500 p-3 bg-red-50 rounded-md border border-red-200">

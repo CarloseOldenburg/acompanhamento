@@ -9,15 +9,93 @@ class ServerGoogleSheetsIntegration {
 
   constructor() {
     this.apiKey = process.env.GOOGLE_API_KEY || ""
-    if (!this.apiKey) {
-      console.warn("Google Sheets API key not configured on server")
-    }
   }
 
   // Get spreadsheet info using access token
   async getSpreadsheetInfo(spreadsheetId: string, accessToken: string) {
     try {
-      console.log("Getting spreadsheet info for ID:", spreadsheetId)
+      console.log("=== getSpreadsheetInfo START ===")
+      console.log("Spreadsheet ID:", spreadsheetId)
+      console.log("Access token present:", !!accessToken)
+      console.log("API key present:", !!this.apiKey)
+      console.log("API key length:", this.apiKey.length)
+
+      if (!this.apiKey) {
+        const error = "Google API key not configured on server. Check GOOGLE_API_KEY environment variable."
+        console.error(error)
+        throw new Error(error)
+      }
+
+      if (!accessToken) {
+        const error = "Access token is required"
+        console.error(error)
+        throw new Error(error)
+      }
+
+      if (!spreadsheetId) {
+        const error = "Spreadsheet ID is required"
+        console.error(error)
+        throw new Error(error)
+      }
+
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${this.apiKey}`
+      console.log("Request URL:", url)
+
+      const headers = {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      }
+      console.log("Request headers:", { ...headers, Authorization: "Bearer [REDACTED]" })
+
+      const response = await fetch(url, { headers })
+
+      console.log("Response status:", response.status)
+      console.log("Response headers:", Object.fromEntries(response.headers.entries()))
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("API Error Response:", errorText)
+
+        let userFriendlyMessage = ""
+        if (response.status === 403) {
+          userFriendlyMessage =
+            "Acesso negado. Verifique se a API do Google Sheets está habilitada e se as permissões estão corretas."
+        } else if (response.status === 404) {
+          userFriendlyMessage =
+            "Planilha não encontrada. Verifique se o ID da planilha está correto e se você tem acesso a ela."
+        } else if (response.status === 401) {
+          userFriendlyMessage = "Token de acesso inválido ou expirado. Tente fazer login novamente."
+        } else {
+          userFriendlyMessage = `Erro ${response.status}: ${errorText}`
+        }
+
+        throw new Error(userFriendlyMessage)
+      }
+
+      const data = await response.json()
+      console.log("Spreadsheet info retrieved successfully")
+      console.log("Spreadsheet title:", data.properties?.title)
+      console.log("Number of sheets:", data.sheets?.length || 0)
+      console.log("=== getSpreadsheetInfo END ===")
+
+      return data
+    } catch (error: any) {
+      console.error("=== getSpreadsheetInfo ERROR ===")
+      console.error("Error type:", error.constructor.name)
+      console.error("Error message:", error.message)
+      console.error("Error stack:", error.stack)
+      console.error("=== getSpreadsheetInfo ERROR END ===")
+      throw error
+    }
+  }
+
+  // Get sheet data using access token
+  async getSheetData(spreadsheetId: string, sheetName: string, accessToken: string) {
+    try {
+      console.log("=== getSheetData START ===")
+      console.log("Spreadsheet ID:", spreadsheetId)
+      console.log("Sheet name:", sheetName)
+      console.log("Access token present:", !!accessToken)
 
       if (!this.apiKey) {
         throw new Error("Google API key not configured on server")
@@ -27,8 +105,9 @@ class ServerGoogleSheetsIntegration {
         throw new Error("Access token is required")
       }
 
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${this.apiKey}`
-      console.log("Fetching from URL:", url)
+      const encodedSheetName = encodeURIComponent(sheetName)
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedSheetName}?key=${this.apiKey}`
+      console.log("Request URL:", url)
 
       const response = await fetch(url, {
         headers: {
@@ -41,74 +120,30 @@ class ServerGoogleSheetsIntegration {
 
       if (!response.ok) {
         const errorText = await response.text()
-        console.error("API Error Response:", errorText)
-
-        if (response.status === 403) {
-          throw new Error(
-            "Acesso negado. Verifique se a API do Google Sheets está habilitada e se as permissões estão corretas.",
-          )
-        } else if (response.status === 404) {
-          throw new Error(
-            "Planilha não encontrada. Verifique se o ID da planilha está correto e se você tem acesso a ela.",
-          )
-        } else {
-          throw new Error(`Erro ao acessar planilha: ${response.status} - ${errorText}`)
-        }
-      }
-
-      const data = await response.json()
-      console.log("Spreadsheet info retrieved successfully")
-      return data
-    } catch (error: any) {
-      console.error("Error in getSpreadsheetInfo:", error)
-      throw error
-    }
-  }
-
-  // Get sheet data using access token
-  async getSheetData(spreadsheetId: string, sheetName: string, accessToken: string) {
-    try {
-      console.log("Getting sheet data for:", sheetName)
-
-      if (!this.apiKey) {
-        throw new Error("Google API key not configured on server")
-      }
-
-      if (!accessToken) {
-        throw new Error("Access token is required")
-      }
-
-      const encodedSheetName = encodeURIComponent(sheetName)
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedSheetName}?key=${this.apiKey}`
-      console.log("Fetching sheet data from URL:", url)
-
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      })
-
-      console.log("Sheet data response status:", response.status)
-
-      if (!response.ok) {
-        const errorText = await response.text()
         console.error("Sheet API Error Response:", errorText)
 
+        let userFriendlyMessage = ""
         if (response.status === 403) {
-          throw new Error("Acesso negado à aba da planilha. Verifique as permissões.")
+          userFriendlyMessage = "Acesso negado à aba da planilha. Verifique as permissões."
         } else if (response.status === 404) {
-          throw new Error(`Aba "${sheetName}" não encontrada na planilha.`)
+          userFriendlyMessage = `Aba "${sheetName}" não encontrada na planilha.`
         } else {
-          throw new Error(`Erro ao obter dados da aba: ${response.status} - ${errorText}`)
+          userFriendlyMessage = `Erro ${response.status}: ${errorText}`
         }
+
+        throw new Error(userFriendlyMessage)
       }
 
       const data = await response.json()
-      console.log("Sheet data retrieved successfully, rows:", data.values?.length || 0)
+      console.log("Sheet data retrieved successfully")
+      console.log("Number of rows:", data.values?.length || 0)
+      console.log("=== getSheetData END ===")
+
       return data.values || []
     } catch (error: any) {
-      console.error("Error in getSheetData:", error)
+      console.error("=== getSheetData ERROR ===")
+      console.error("Error message:", error.message)
+      console.error("=== getSheetData ERROR END ===")
       throw error
     }
   }
@@ -116,7 +151,9 @@ class ServerGoogleSheetsIntegration {
   // Convert Google Sheets data to TabData format
   convertToTabData(sheetName: string, data: string[][]): TabData {
     try {
-      console.log("Converting sheet data to TabData format")
+      console.log("=== convertToTabData START ===")
+      console.log("Sheet name:", sheetName)
+      console.log("Data rows:", data.length)
 
       if (!data || data.length === 0) {
         throw new Error("Planilha vazia ou sem dados")
@@ -126,7 +163,7 @@ class ServerGoogleSheetsIntegration {
       const rows = data.slice(1)
 
       console.log("Headers:", headers)
-      console.log("Data rows:", rows.length)
+      console.log("Data rows count:", rows.length)
 
       // Create columns based on headers
       const columns: Column[] = headers.map((header, index) => {
@@ -177,9 +214,12 @@ class ServerGoogleSheetsIntegration {
       }
 
       console.log("TabData conversion completed successfully")
+      console.log("=== convertToTabData END ===")
       return result
     } catch (error: any) {
-      console.error("Error in convertToTabData:", error)
+      console.error("=== convertToTabData ERROR ===")
+      console.error("Error message:", error.message)
+      console.error("=== convertToTabData ERROR END ===")
       throw error
     }
   }
@@ -254,79 +294,106 @@ const sheetsIntegration = new ServerGoogleSheetsIntegration()
 
 export async function getSpreadsheetInfoAction(spreadsheetId: string, accessToken: string) {
   try {
-    console.log("Server action: getSpreadsheetInfoAction called")
+    console.log("=== SERVER ACTION: getSpreadsheetInfoAction START ===")
+    console.log("Received spreadsheet ID:", spreadsheetId)
+    console.log("Received access token length:", accessToken?.length || 0)
+
     const result = await sheetsIntegration.getSpreadsheetInfo(spreadsheetId, accessToken)
-    console.log("Server action: getSpreadsheetInfoAction completed successfully")
+
+    console.log("=== SERVER ACTION: getSpreadsheetInfoAction SUCCESS ===")
     return result
   } catch (error: any) {
-    console.error("Server action error in getSpreadsheetInfoAction:", error)
-    // Return a more user-friendly error
+    console.error("=== SERVER ACTION: getSpreadsheetInfoAction ERROR ===")
+    console.error("Error type:", error.constructor.name)
+    console.error("Error message:", error.message)
+    console.error("Error stack:", error.stack)
+    console.error("=== SERVER ACTION: getSpreadsheetInfoAction ERROR END ===")
+
+    // Re-throw with original message to preserve user-friendly errors
     throw new Error(error.message || "Erro ao acessar planilha do Google Sheets")
   }
 }
 
 export async function getSheetDataAction(spreadsheetId: string, sheetName: string, accessToken: string) {
   try {
-    console.log("Server action: getSheetDataAction called")
+    console.log("=== SERVER ACTION: getSheetDataAction START ===")
     const result = await sheetsIntegration.getSheetData(spreadsheetId, sheetName, accessToken)
-    console.log("Server action: getSheetDataAction completed successfully")
+    console.log("=== SERVER ACTION: getSheetDataAction SUCCESS ===")
     return result
   } catch (error: any) {
-    console.error("Server action error in getSheetDataAction:", error)
+    console.error("=== SERVER ACTION: getSheetDataAction ERROR ===")
+    console.error("Error message:", error.message)
+    console.error("=== SERVER ACTION: getSheetDataAction ERROR END ===")
     throw new Error(error.message || "Erro ao obter dados da aba")
   }
 }
 
 export async function importGoogleSheetAction(sheetName: string, data: string[][]) {
   try {
-    console.log("Server action: importGoogleSheetAction called")
+    console.log("=== SERVER ACTION: importGoogleSheetAction START ===")
     const tabData = sheetsIntegration.convertToTabData(sheetName, data)
     const result = await createTabAction(tabData)
-    console.log("Server action: importGoogleSheetAction completed successfully")
+    console.log("=== SERVER ACTION: importGoogleSheetAction SUCCESS ===")
     return result
   } catch (error: any) {
-    console.error("Server action error in importGoogleSheetAction:", error)
+    console.error("=== SERVER ACTION: importGoogleSheetAction ERROR ===")
+    console.error("Error message:", error.message)
+    console.error("=== SERVER ACTION: importGoogleSheetAction ERROR END ===")
     throw new Error(error.message || "Erro ao importar planilha")
   }
 }
 
 export async function extractSpreadsheetIdAction(url: string) {
   try {
-    console.log("Server action: extractSpreadsheetIdAction called with URL:", url)
+    console.log("=== SERVER ACTION: extractSpreadsheetIdAction START ===")
+    console.log("URL received:", url)
     const result = ServerGoogleSheetsIntegration.extractSpreadsheetId(url)
-    console.log("Server action: extractSpreadsheetIdAction result:", result)
+    console.log("Extracted ID:", result)
+    console.log("=== SERVER ACTION: extractSpreadsheetIdAction SUCCESS ===")
     return result
   } catch (error: any) {
-    console.error("Server action error in extractSpreadsheetIdAction:", error)
+    console.error("=== SERVER ACTION: extractSpreadsheetIdAction ERROR ===")
+    console.error("Error message:", error.message)
+    console.error("=== SERVER ACTION: extractSpreadsheetIdAction ERROR END ===")
     throw new Error("Erro ao extrair ID da planilha")
   }
 }
 
 export async function checkGoogleApiConfigAction() {
   try {
-    console.log("Server action: checkGoogleApiConfigAction called")
+    console.log("=== SERVER ACTION: checkGoogleApiConfigAction START ===")
+
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
     const apiKey = process.env.GOOGLE_API_KEY
+
+    console.log("Environment check:")
+    console.log("- NEXT_PUBLIC_GOOGLE_CLIENT_ID present:", !!clientId)
+    console.log("- NEXT_PUBLIC_GOOGLE_CLIENT_ID length:", clientId?.length || 0)
+    console.log("- GOOGLE_API_KEY present:", !!apiKey)
+    console.log("- GOOGLE_API_KEY length:", apiKey?.length || 0)
 
     const result = {
       hasClientId: !!clientId,
       hasApiKey: !!apiKey,
       isConfigured: !!(clientId && apiKey),
+      clientIdLength: clientId?.length || 0,
+      apiKeyLength: apiKey?.length || 0,
     }
 
-    console.log("Server action: checkGoogleApiConfigAction result:", {
-      hasClientId: result.hasClientId,
-      hasApiKey: result.hasApiKey,
-      isConfigured: result.isConfigured,
-    })
+    console.log("Config result:", result)
+    console.log("=== SERVER ACTION: checkGoogleApiConfigAction SUCCESS ===")
 
     return result
   } catch (error: any) {
-    console.error("Server action error in checkGoogleApiConfigAction:", error)
+    console.error("=== SERVER ACTION: checkGoogleApiConfigAction ERROR ===")
+    console.error("Error message:", error.message)
+    console.error("=== SERVER ACTION: checkGoogleApiConfigAction ERROR END ===")
     return {
       hasClientId: false,
       hasApiKey: false,
       isConfigured: false,
+      clientIdLength: 0,
+      apiKeyLength: 0,
     }
   }
 }
