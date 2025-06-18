@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import { ArrowLeft, Download, TrendingUp, Users, Clock, CheckCircle } from "lucide-react"
 import type { DashboardData } from "../types"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
+import { toast } from "sonner"
 
 interface EnhancedDashboardProps {
   data: DashboardData
@@ -16,6 +17,8 @@ interface EnhancedDashboardProps {
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
 
 export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
+  const [selectedPeriod, setSelectedPeriod] = useState("todos")
+
   const chartData = useMemo(
     () =>
       Object.entries(data.statusCounts).map(([status, count]) => ({
@@ -34,6 +37,43 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
       })),
     [data.statusCounts],
   )
+
+  // Função para calcular porcentagens que somam exatamente 100%
+  const calculatePercentages = useMemo(() => {
+    const statusEntries = Object.entries(data.statusCounts)
+    const total = data.totalRecords
+
+    if (total === 0) return {}
+
+    // Calcular porcentagens brutas
+    const rawPercentages = statusEntries.map(([status, count]) => ({
+      status,
+      count,
+      rawPercent: (count / total) * 100,
+    }))
+
+    // Arredondar e ajustar para somar 100%
+    const percentages: { [key: string]: number } = {}
+    let totalRounded = 0
+
+    // Primeiro, arredondar normalmente
+    rawPercentages.forEach(({ status, rawPercent }) => {
+      const rounded = Math.round(rawPercent * 10) / 10 // Uma casa decimal
+      percentages[status] = rounded
+      totalRounded += rounded
+    })
+
+    // Ajustar se não somar 100%
+    const difference = 100 - totalRounded
+    if (Math.abs(difference) > 0.01) {
+      // Encontrar o status com maior contagem para ajustar
+      const maxStatus = rawPercentages.reduce((max, current) => (current.count > max.count ? current : max)).status
+
+      percentages[maxStatus] = Math.round((percentages[maxStatus] + difference) * 10) / 10
+    }
+
+    return percentages
+  }, [data.statusCounts, data.totalRecords])
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -65,6 +105,56 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     }
   }
 
+  const handleExport = () => {
+    try {
+      // Criar dados para exportação
+      const exportData = data.recentActivity.map((row) => ({
+        "Carimbo de data/hora": row.timestamp || "",
+        "Nome do Restaurante": row.nome || row.restaurante || "",
+        "Telefone do Cliente": row.telefone || "",
+        Solicitante: row.solicitante || "",
+        "Merchant ID Totem": row.merchantId || "",
+        "PDV / Integradora": row.pdv || "",
+        Observação: row.observacao || "",
+        Status: row.status || "",
+        "Data de Agendamento": row.dataAgendamento || "",
+      }))
+
+      // Converter para CSV
+      const headers = Object.keys(exportData[0] || {})
+      const csvContent = [
+        headers.join(","),
+        ...exportData.map((row) =>
+          headers
+            .map((header) => `"${(row[header as keyof typeof row] || "").toString().replace(/"/g, '""')}"`)
+            .join(","),
+        ),
+      ].join("\n")
+
+      // Download do arquivo
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const link = document.createElement("a")
+      const url = URL.createObjectURL(blob)
+      link.setAttribute("href", url)
+      link.setAttribute("download", `${data.tabName}_${new Date().toISOString().split("T")[0]}.csv`)
+      link.style.visibility = "hidden"
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast.success("Dados exportados com sucesso!")
+    } catch (error) {
+      toast.error("Erro ao exportar dados")
+      console.error("Export error:", error)
+    }
+  }
+
+  const handlePeriodChange = (value: string) => {
+    setSelectedPeriod(value)
+    toast.info(`Filtro alterado para: ${value === "todos" ? "Todos os períodos" : value}`)
+    // Aqui você pode implementar a lógica de filtro real
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30">
       <div className="container mx-auto p-6 space-y-8">
@@ -81,7 +171,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            <Select defaultValue="todos">
+            <Select value={selectedPeriod} onValueChange={handlePeriodChange}>
               <SelectTrigger className="w-48 shadow-sm">
                 <SelectValue placeholder="Filtrar por período" />
               </SelectTrigger>
@@ -92,7 +182,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
                 <SelectItem value="mes">Este mês</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" className="shadow-sm">
+            <Button onClick={handleExport} variant="outline" className="shadow-sm">
               <Download className="w-4 h-4 mr-2" />
               Exportar
             </Button>
@@ -105,7 +195,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-blue-100 text-sm font-medium">Total de Registros</p>
+                  <p className="text-blue-100 text-sm font-medium">Total</p>
                   <p className="text-3xl font-bold">{data.totalRecords}</p>
                 </div>
                 <div className="w-12 h-12 bg-blue-400/30 rounded-lg flex items-center justify-center">
@@ -124,9 +214,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
                     <div>
                       <p className="text-gray-600 text-sm font-medium">{status}</p>
                       <p className="text-2xl font-bold text-gray-900">{count}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {((count / data.totalRecords) * 100).toFixed(1)}% do total
-                      </p>
+                      <p className="text-xs text-gray-500 mt-1">{calculatePercentages[status]?.toFixed(1)}% do total</p>
                     </div>
                     <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${getStatusColor(status)}`}>
                       {getStatusIcon(status)}
@@ -189,40 +277,6 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
             </CardContent>
           </Card>
         </div>
-
-        {/* Recent Activity */}
-        <Card className="shadow-lg border-0">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-xl font-semibold text-gray-900">Atividade Recente</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {data.recentActivity.slice(0, 8).map((row, index) => (
-                <div
-                  key={row.id}
-                  className="flex items-center justify-between p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors"
-                >
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900">
-                      {row.nome || row.restaurante || row.cliente || row.loja || `Registro ${index + 1}`}
-                    </div>
-                    <div className="text-sm text-gray-600 mt-1">
-                      {row.observacao || row.descricao || "Sem observações"}
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <div
-                      className={`px-3 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(row.status || "Pendente")}`}
-                    >
-                      {getStatusIcon(row.status || "Pendente")}
-                      <span>{row.status || "Pendente"}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

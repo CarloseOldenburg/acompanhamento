@@ -47,6 +47,44 @@ export default function SharedDashboard() {
     toast.success("Link copiado para a área de transferência!")
   }
 
+  const handleExport = () => {
+    try {
+      const exportData = tabData.rows.map((row) => ({
+        "Carimbo de data/hora": row.timestamp || "",
+        "Nome do Restaurante": row.nome || row.restaurante || "",
+        "Telefone do Cliente": row.telefone || "",
+        Solicitante: row.solicitante || "",
+        "Merchant ID Totem": row.merchantId || "",
+        "PDV / Integradora": row.pdv || "",
+        Observação: row.observacao || "",
+        Status: row.status || "",
+        "Data de Agendamento": row.dataAgendamento || "",
+      }))
+
+      const headers = Object.keys(exportData[0] || {})
+      const csvContent = [
+        headers.join(","),
+        ...exportData.map((row) =>
+          headers.map((header) => `"${(row[header] || "").toString().replace(/"/g, '""')}"`).join(","),
+        ),
+      ].join("\n")
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const link = document.createElement("a")
+      const url = URL.createObjectURL(blob)
+      link.setAttribute("href", url)
+      link.setAttribute("download", `${tabData.name}_${new Date().toISOString().split("T")[0]}.csv`)
+      link.style.visibility = "hidden"
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast.success("Dados exportados com sucesso!")
+    } catch (error) {
+      toast.error("Erro ao exportar dados")
+    }
+  }
+
   if (loading && !tabData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50/30">
@@ -147,6 +185,9 @@ export default function SharedDashboard() {
                 <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
                 Atualizar
               </Button>
+              <Button variant="outline" onClick={handleExport} className="shadow-sm">
+                Exportar
+              </Button>
             </div>
           </div>
 
@@ -156,7 +197,7 @@ export default function SharedDashboard() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-blue-100 text-sm font-medium">Total de Registros</p>
+                    <p className="text-blue-100 text-sm font-medium">Total</p>
                     <p className="text-3xl font-bold">{tabData.rows.length}</p>
                   </div>
                   <div className="w-12 h-12 bg-blue-400/30 rounded-lg flex items-center justify-center">
