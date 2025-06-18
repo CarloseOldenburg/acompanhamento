@@ -283,40 +283,6 @@ export default function SharedDashboard() {
               </CardContent>
             </Card>
           </div>
-
-          {/* Recent Activity */}
-          <Card className="shadow-lg border-0">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl font-semibold text-gray-900">Registros Recentes</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {tabData.rows.slice(0, 8).map((row: any, index: number) => (
-                  <div
-                    key={row.id}
-                    className="flex items-center justify-between p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900">
-                        {row.nome || row.restaurante || row.cliente || row.loja || `Registro ${index + 1}`}
-                      </div>
-                      <div className="text-sm text-gray-600 mt-1">
-                        {row.observacao || row.descricao || "Sem observações"}
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <div
-                        className={`px-3 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(row.status || "Pendente")}`}
-                      >
-                        {getStatusIcon(row.status || "Pendente")}
-                        <span>{row.status || "Pendente"}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
 
