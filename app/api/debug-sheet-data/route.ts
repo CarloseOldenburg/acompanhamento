@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     // Method 1: Basic sheet name
     try {
-      const url1 = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}?key=${apiKey}`
+      const url1 = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}?key=${apiKey}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`
       console.log("Method 1 URL:", url1)
 
       const response1 = await fetch(url1, { headers })
@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
         dataLength: data1?.values?.length || 0,
         firstRow: data1?.values?.[0]?.slice(0, 3) || [],
         secondRow: data1?.values?.[1]?.slice(0, 3) || [],
+        fullData: data1?.values || [], // Return full data
         error: response1.ok ? null : await response1.text(),
       })
     } catch (error: any) {
@@ -55,58 +56,63 @@ export async function POST(request: NextRequest) {
         method: "Basic sheet name",
         success: false,
         error: error.message,
+        fullData: [],
       })
     }
 
-    // Method 2: Sheet with range A:Z
+    // Method 2: Sheet with range A:ZZ (expanded range)
     try {
-      const url2 = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:Z?key=${apiKey}`
+      const url2 = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A:ZZ?key=${apiKey}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`
       console.log("Method 2 URL:", url2)
 
       const response2 = await fetch(url2, { headers })
       const data2 = response2.ok ? await response2.json() : null
 
       results.push({
-        method: "Sheet with A:Z range",
+        method: "Sheet with A:ZZ range",
         url: url2,
         status: response2.status,
         success: response2.ok,
         dataLength: data2?.values?.length || 0,
         firstRow: data2?.values?.[0]?.slice(0, 3) || [],
         secondRow: data2?.values?.[1]?.slice(0, 3) || [],
+        fullData: data2?.values || [], // Return full data
         error: response2.ok ? null : await response2.text(),
       })
     } catch (error: any) {
       results.push({
-        method: "Sheet with A:Z range",
+        method: "Sheet with A:ZZ range",
         success: false,
         error: error.message,
+        fullData: [],
       })
     }
 
-    // Method 3: Sheet with specific range A1:Z1000
+    // Method 3: Sheet with specific range A1:ZZ1000 (much larger range)
     try {
-      const url3 = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:Z1000?key=${apiKey}`
+      const url3 = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName)}!A1:ZZ1000?key=${apiKey}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`
       console.log("Method 3 URL:", url3)
 
       const response3 = await fetch(url3, { headers })
       const data3 = response3.ok ? await response3.json() : null
 
       results.push({
-        method: "Sheet with A1:Z1000 range",
+        method: "Sheet with A1:ZZ1000 range",
         url: url3,
         status: response3.status,
         success: response3.ok,
         dataLength: data3?.values?.length || 0,
         firstRow: data3?.values?.[0]?.slice(0, 3) || [],
         secondRow: data3?.values?.[1]?.slice(0, 3) || [],
+        fullData: data3?.values || [], // Return full data
         error: response3.ok ? null : await response3.text(),
       })
     } catch (error: any) {
       results.push({
-        method: "Sheet with A1:Z1000 range",
+        method: "Sheet with A1:ZZ1000 range",
         success: false,
         error: error.message,
+        fullData: [],
       })
     }
 
@@ -145,7 +151,7 @@ export async function POST(request: NextRequest) {
         dataLength: extractedData.length,
         firstRow: extractedData[0]?.slice(0, 3) || [],
         secondRow: extractedData[1]?.slice(0, 3) || [],
-        extractedData: extractedData.slice(0, 3), // First 3 rows for debugging
+        fullData: extractedData, // Return full extracted data
         error: response4.ok ? null : await response4.text(),
       })
     } catch (error: any) {
@@ -153,6 +159,7 @@ export async function POST(request: NextRequest) {
         method: "Grid data API",
         success: false,
         error: error.message,
+        fullData: [],
       })
     }
 
@@ -175,6 +182,7 @@ export async function POST(request: NextRequest) {
             columnCount: sheet.properties?.gridProperties?.columnCount,
           })) || [],
         requestedSheet: sheetName,
+        fullData: [], // No data for this method
         error: response5.ok ? null : await response5.text(),
       })
     } catch (error: any) {
@@ -182,7 +190,25 @@ export async function POST(request: NextRequest) {
         method: "List sheets",
         success: false,
         error: error.message,
+        fullData: [],
       })
+    }
+
+    // Find the best result with the most data
+    const bestResult = results
+      .filter((r) => r.success && r.fullData && r.fullData.length > 0)
+      .sort((a, b) => (b.fullData?.length || 0) - (a.fullData?.length || 0))[0]
+
+    console.log("=== BEST RESULT ANALYSIS ===")
+    if (bestResult) {
+      console.log("Best method:", bestResult.method)
+      console.log("Data length:", bestResult.fullData?.length || 0)
+      console.log("First 3 rows preview:")
+      bestResult.fullData?.slice(0, 3).forEach((row: any[], index: number) => {
+        console.log(`  Row ${index + 1}:`, row.slice(0, 5))
+      })
+    } else {
+      console.log("No successful results found")
     }
 
     return NextResponse.json({
@@ -194,8 +220,9 @@ export async function POST(request: NextRequest) {
       summary: {
         totalMethods: results.length,
         successfulMethods: results.filter((r) => r.success).length,
-        methodsWithData: results.filter((r) => r.dataLength > 0).length,
-        bestResult: results.find((r) => r.success && r.dataLength > 0) || null,
+        methodsWithData: results.filter((r) => r.fullData && r.fullData.length > 0).length,
+        bestResult: bestResult || null,
+        maxDataLength: Math.max(...results.map((r) => r.fullData?.length || 0)),
       },
     })
   } catch (error: any) {

@@ -1,12 +1,17 @@
 "use client"
 
-import { DialogTrigger } from "@/components/ui/dialog"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -81,6 +86,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
 
       const result = await response.json()
       console.log("Sheet data debug result:", result)
+      setDebugResults(result)
 
       // Log detailed results for debugging
       if (result.success && result.results) {
@@ -89,6 +95,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
           console.log(`Method ${i + 1}: ${r.method}`)
           console.log(`  Success: ${r.success}`)
           console.log(`  Data length: ${r.dataLength || 0}`)
+          console.log(`  Full data length: ${r.fullData?.length || 0}`)
           console.log(`  First row: ${JSON.stringify(r.firstRow?.slice(0, 3) || [])}`)
           console.log(`  Second row: ${JSON.stringify(r.secondRow?.slice(0, 3) || [])}`)
           if (r.error) console.log(`  Error: ${r.error}`)
@@ -99,14 +106,13 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
 
       if (result.success && result.summary?.bestResult) {
         const bestResult = result.summary.bestResult
-        if (bestResult.dataLength > 0) {
-          // Convert the successful result to the expected format
-          const data =
-            bestResult.method === "Grid data API"
-              ? bestResult.extractedData
-              : [bestResult.firstRow, bestResult.secondRow].filter((row) => row.length > 0)
+        console.log("=== USING BEST RESULT ===")
+        console.log("Best method:", bestResult.method)
+        console.log("Full data length:", bestResult.fullData?.length || 0)
+        console.log("Sample data:", bestResult.fullData?.slice(0, 3) || [])
 
-          return data
+        if (bestResult.fullData && bestResult.fullData.length > 0) {
+          return bestResult.fullData
         }
       }
 
@@ -366,6 +372,7 @@ ${serverActionError.message}
 
         if (debugData && debugData.length > 0) {
           console.log("✅ Debug endpoint returned data:", debugData.length, "rows")
+          console.log("Full data preview:", debugData.slice(0, 3))
 
           // Convert to preview format
           const headers = debugData[0]
@@ -456,6 +463,7 @@ ${
 - Métodos testados: ${debugResults.summary?.totalMethods || 0}
 - Métodos bem-sucedidos: ${debugResults.summary?.successfulMethods || 0}
 - Métodos com dados: ${debugResults.summary?.methodsWithData || 0}
+- Máximo de dados encontrados: ${debugResults.summary?.maxDataLength || 0}
 
 💡 DICA: Verifique se a aba "${sheetName}" contém dados e se você tem permissão para acessá-la.
         `)
@@ -486,6 +494,7 @@ ${
           headers: data[0],
           firstDataRow: data[1],
           sampleData: data.slice(0, 3),
+          allData: data, // Log all data for debugging
         })
       } catch (debugError) {
         console.log("Debug endpoint failed, using server action...")
@@ -578,6 +587,7 @@ ${
                   <div>Métodos testados: {debugResults.summary?.totalMethods || 0}</div>
                   <div>Métodos com sucesso: {debugResults.summary?.successfulMethods || 0}</div>
                   <div>Métodos com dados: {debugResults.summary?.methodsWithData || 0}</div>
+                  <div>Máximo de dados: {debugResults.summary?.maxDataLength || 0}</div>
                   {debugResults.summary?.bestResult && (
                     <div className="mt-2 p-2 bg-green-100 rounded">
                       <div className="font-medium text-green-800">✅ Melhor resultado:</div>
@@ -585,6 +595,8 @@ ${
                         Método: {debugResults.summary.bestResult.method}
                         <br />
                         Linhas: {debugResults.summary.bestResult.dataLength}
+                        <br />
+                        Dados completos: {debugResults.summary.bestResult.fullData?.length || 0}
                       </div>
                     </div>
                   )}
@@ -713,7 +725,12 @@ ${
               <h3 className="font-medium mb-2">Preview: {previewData?.name}</h3>
               <div className="flex items-center space-x-4 text-sm text-gray-600">
                 <span>{previewData?.columns.length} colunas</span>
-                <span>{previewData?.rows.length}+ registros</span>
+                <span>{previewData?.rows.length}+ registros (preview)</span>
+                {debugResults?.summary?.maxDataLength && (
+                  <span className="text-green-600 font-medium">
+                    Total: {debugResults.summary.maxDataLength - 1} registros
+                  </span>
+                )}
               </div>
             </div>
 
