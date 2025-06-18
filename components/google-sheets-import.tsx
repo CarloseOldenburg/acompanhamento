@@ -15,7 +15,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { FileSpreadsheet, Download, CheckCircle, AlertTriangle, Clock, Bug } from "lucide-react"
+import { FileSpreadsheet, Download, CheckCircle, AlertTriangle, Clock, Bug, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import { ClientGoogleAuth } from "../lib/client-google-auth"
 import { LoadingSpinner } from "./loading-spinner"
@@ -88,6 +88,12 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
       if (result.success) {
         return result.data
       } else {
+        // If it's a referrer error, throw with solution
+        if (result.error === "HTTP Referrer Blocked" && result.solution) {
+          const error = new Error("HTTP_REFERRER_BLOCKED")
+          error.solution = result.solution
+          throw error
+        }
         throw new Error(result.error || "Debug API failed")
       }
     } catch (error: any) {
@@ -171,6 +177,26 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
       } catch (debugError: any) {
         console.error("Debug endpoint failed, trying server action:", debugError)
 
+        // Handle HTTP referrer blocked error specifically
+        if (debugError.message === "HTTP_REFERRER_BLOCKED" && debugError.solution) {
+          setError(`
+🚫 ERRO: HTTP Referrer Bloqueado
+
+${debugError.solution.problem}
+
+📋 INSTRUÇÕES PARA RESOLVER:
+
+${debugError.solution.steps.join("\n")}
+
+🌐 Origem atual detectada: ${debugError.solution.currentOrigin}
+
+💡 DICA: A opção mais simples é remover todas as restrições da API Key (Opção A).
+          `)
+          setStep("url")
+          toast.error("Erro de configuração da API Key. Verifique as instruções abaixo.")
+          return
+        }
+
         // If debug fails, try the original server action
         try {
           const info = await getSpreadsheetInfoAction(spreadsheetId, accessToken)
@@ -180,33 +206,41 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
         } catch (serverActionError: any) {
           console.error("Server action also failed:", serverActionError)
 
-          // Show detailed error from debug endpoint if available
-          if (debugError.message && debugError.message !== "Debug API failed") {
+          // Check if server action error also mentions referrer
+          if (
+            serverActionError.message.includes("HTTP Referrer Bloqueado") ||
+            serverActionError.message.includes("referrer")
+          ) {
             setError(`
-Erro detalhado da API do Google Sheets:
+🚫 ERRO: HTTP Referrer Bloqueado
 
-${debugError.message}
+A API Key do Google está configurada com restrições de HTTP Referrer que estão bloqueando as requisições do servidor.
 
-INFORMAÇÕES DE DEBUG:
-- URL: ${spreadsheetUrl}
-- ID: ${spreadsheetId}
-- Token length: ${accessToken.length}
-- Client ID: ${apiConfig?.hasClientId ? "Configurado" : "Não configurado"}
-- API Key: ${apiConfig?.hasApiKey ? "Configurado" : "Não configurado"}
+📋 SOLUÇÃO RÁPIDA:
+1. Acesse: https://console.cloud.google.com/apis/credentials
+2. Clique na sua API Key do Google Sheets
+3. Na seção "Restrições da aplicação", selecione "Nenhuma"
+4. Clique em "Salvar"
+5. Aguarde alguns minutos para a propagação
+6. Tente novamente
 
-POSSÍVEIS SOLUÇÕES:
-1. Verifique se a planilha é pública ou se você tem acesso
-2. Certifique-se de que a Google Sheets API está habilitada
-3. Verifique se as credenciais OAuth estão corretas
-4. Tente compartilhar a planilha publicamente
+📋 SOLUÇÃO ALTERNATIVA (Mais Segura):
+1. Em "Restrições da aplicação", mantenha "Referenciadores HTTP"
+2. Na lista "Referenciadores HTTP", adicione:
+   • https://acompanhamento.proxmox-carlos.com.br/*
+   • https://acompanhamento.proxmox-carlos.com.br
+3. Salve e aguarde alguns minutos
+
+🌐 URL da planilha: ${spreadsheetUrl}
+🆔 ID extraído: ${spreadsheetId}
             `)
           } else {
             setError(`
-Erro ao acessar planilha:
+❌ Erro ao acessar planilha:
 
 ${serverActionError.message}
 
-INFORMAÇÕES DE DEBUG:
+🔍 INFORMAÇÕES DE DEBUG:
 - URL: ${spreadsheetUrl}
 - ID: ${spreadsheetId}
 - Token: ${accessToken ? "Presente" : "Ausente"}
@@ -232,9 +266,9 @@ INFORMAÇÕES DE DEBUG:
       // Handle specific OAuth errors with detailed instructions
       if (error.message.includes("redirect_uri_mismatch")) {
         setError(`
-Erro de configuração OAuth: redirect_uri_mismatch
+🚫 Erro de configuração OAuth: redirect_uri_mismatch
 
-INSTRUÇÕES PARA RESOLVER:
+📋 INSTRUÇÕES PARA RESOLVER:
 
 1. Acesse: https://console.cloud.google.com/
 2. Vá para "APIs e Serviços" > "Credenciais"
@@ -249,7 +283,7 @@ INSTRUÇÕES PARA RESOLVER:
 5. Salve e aguarde alguns minutos
 6. Tente novamente
 
-Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
+🌐 Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
         `)
       } else {
         setError(error.message || "Erro ao acessar planilha")
@@ -386,21 +420,36 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
             )}
 
             {error && (
-              <div className="text-sm text-red-500 p-3 bg-red-50 rounded-md border border-red-200 max-h-60 overflow-y-auto">
-                <div className="flex items-center gap-2 font-medium mb-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  Erro Detalhado
+              <div className="text-sm text-red-500 p-4 bg-red-50 rounded-md border border-red-200 max-h-80 overflow-y-auto">
+                <div className="flex items-center gap-2 font-medium mb-3">
+                  <AlertTriangle className="w-5 h-5" />
+                  Erro de Configuração
                 </div>
-                <div className="mb-3 whitespace-pre-line">{error}</div>
-                <div className="text-xs space-y-1">
-                  <div className="font-medium">Para configurar o Google Sheets:</div>
+                <div className="mb-4 whitespace-pre-line font-mono text-xs leading-relaxed">{error}</div>
+
+                {error.includes("HTTP Referrer Bloqueado") && (
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                    <div className="flex items-center gap-2 text-blue-800 font-medium mb-2">
+                      <ExternalLink className="w-4 h-4" />
+                      Link Rápido
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open("https://console.cloud.google.com/apis/credentials", "_blank")}
+                      className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                    >
+                      Abrir Google Cloud Console
+                    </Button>
+                  </div>
+                )}
+
+                <div className="text-xs space-y-1 mt-4 pt-3 border-t border-red-200">
+                  <div className="font-medium">Configuração Geral do Google Sheets:</div>
                   <div>1. Acesse o Google Cloud Console</div>
                   <div>2. Crie um projeto e ative a Google Sheets API</div>
                   <div>3. Configure as credenciais OAuth 2.0</div>
-                  <div>
-                    4. Adicione {mounted ? window.location.origin : "seu-dominio"} às URIs de redirecionamento
-                    autorizadas
-                  </div>
+                  <div>4. Configure a API Key sem restrições ou com referrer correto</div>
                   <div>5. Adicione as variáveis de ambiente no seu projeto</div>
                 </div>
               </div>

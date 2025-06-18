@@ -24,13 +24,25 @@ export async function POST(request: NextRequest) {
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${apiKey}`
     console.log("Request URL:", url)
 
+    // Get the origin from the request headers
+    const origin =
+      request.headers.get("origin") || request.headers.get("referer") || "https://acompanhamento.proxmox-carlos.com.br"
+    console.log("Request origin:", origin)
+    console.log("All request headers:", Object.fromEntries(request.headers.entries()))
+
     const headers = {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
+      Referer: origin,
+      Origin: origin,
+      "User-Agent": "Mozilla/5.0 (compatible; NextJS-GoogleSheets/1.0)",
     }
     console.log("Request headers:", { ...headers, Authorization: "Bearer [REDACTED]" })
 
-    const response = await fetch(url, { headers })
+    const response = await fetch(url, {
+      headers,
+      method: "GET",
+    })
 
     console.log("Response status:", response.status)
     console.log("Response headers:", Object.fromEntries(response.headers.entries()))
@@ -44,6 +56,39 @@ export async function POST(request: NextRequest) {
         parsedError = JSON.parse(errorText)
       } catch {
         parsedError = { message: errorText }
+      }
+
+      // Provide specific guidance for HTTP referrer issues
+      if (errorText.includes("API_KEY_HTTP_REFERRER_BLOCKED") || errorText.includes("referer")) {
+        return NextResponse.json(
+          {
+            error: "HTTP Referrer Blocked",
+            status: response.status,
+            details: parsedError,
+            rawError: errorText,
+            solution: {
+              problem:
+                "A API Key do Google está configurada com restrições de HTTP Referrer que estão bloqueando as requisições do servidor.",
+              steps: [
+                "1. Acesse o Google Cloud Console: https://console.cloud.google.com/",
+                "2. Vá para 'APIs e Serviços' > 'Credenciais'",
+                "3. Clique na sua API Key",
+                "4. Na seção 'Restrições da aplicação', escolha uma das opções:",
+                "   OPÇÃO A (Recomendada): Selecione 'Nenhuma' para remover todas as restrições",
+                "   OPÇÃO B: Em 'Referenciadores HTTP', adicione:",
+                `   • ${origin}/*`,
+                `   • ${origin}`,
+                "   • https://acompanhamento.proxmox-carlos.com.br/*",
+                "   • https://acompanhamento.proxmox-carlos.com.br",
+                "5. Salve as alterações",
+                "6. Aguarde alguns minutos para a propagação",
+                "7. Tente novamente",
+              ],
+              currentOrigin: origin,
+            },
+          },
+          { status: response.status },
+        )
       }
 
       return NextResponse.json(

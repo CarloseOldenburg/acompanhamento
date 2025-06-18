@@ -1,5 +1,6 @@
 "use server"
 
+import { headers } from "next/headers"
 import type { TabData, Column } from "../types"
 import { createTabAction } from "./actions"
 
@@ -9,6 +10,20 @@ class ServerGoogleSheetsIntegration {
 
   constructor() {
     this.apiKey = process.env.GOOGLE_API_KEY || ""
+  }
+
+  // Get the current request origin for referrer
+  private async getCurrentOrigin(): Promise<string> {
+    try {
+      const headersList = await headers()
+      const origin =
+        headersList.get("origin") || headersList.get("referer") || "https://acompanhamento.proxmox-carlos.com.br"
+      console.log("Current origin for referrer:", origin)
+      return origin
+    } catch (error) {
+      console.log("Could not get headers, using default origin")
+      return "https://acompanhamento.proxmox-carlos.com.br"
+    }
   }
 
   // Get spreadsheet info using access token
@@ -41,13 +56,22 @@ class ServerGoogleSheetsIntegration {
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${this.apiKey}`
       console.log("Request URL:", url)
 
+      // Get current origin for referrer
+      const origin = await this.getCurrentOrigin()
+
       const headers = {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        Referer: origin,
+        Origin: origin,
+        "User-Agent": "Mozilla/5.0 (compatible; NextJS-GoogleSheets/1.0)",
       }
       console.log("Request headers:", { ...headers, Authorization: "Bearer [REDACTED]" })
 
-      const response = await fetch(url, { headers })
+      const response = await fetch(url, {
+        headers,
+        method: "GET",
+      })
 
       console.log("Response status:", response.status)
       console.log("Response headers:", Object.fromEntries(response.headers.entries()))
@@ -58,8 +82,31 @@ class ServerGoogleSheetsIntegration {
 
         let userFriendlyMessage = ""
         if (response.status === 403) {
-          userFriendlyMessage =
-            "Acesso negado. Verifique se a API do Google Sheets está habilitada e se as permissões estão corretas."
+          if (errorText.includes("API_KEY_HTTP_REFERRER_BLOCKED") || errorText.includes("referer")) {
+            userFriendlyMessage = `
+ERRO: HTTP Referrer Bloqueado
+
+A API Key do Google está configurada com restrições de referrer que estão bloqueando as requisições.
+
+SOLUÇÃO RÁPIDA:
+1. Acesse: https://console.cloud.google.com/apis/credentials
+2. Clique na sua API Key
+3. Em "Restrições da aplicação", selecione "Nenhuma"
+4. Salve e aguarde alguns minutos
+
+SOLUÇÃO ALTERNATIVA:
+1. Em "Referenciadores HTTP", adicione:
+   • ${origin}/*
+   • ${origin}
+   • https://acompanhamento.proxmox-carlos.com.br/*
+   • https://acompanhamento.proxmox-carlos.com.br
+
+Origem atual detectada: ${origin}
+            `
+          } else {
+            userFriendlyMessage =
+              "Acesso negado. Verifique se a API do Google Sheets está habilitada e se as permissões estão corretas."
+          }
         } else if (response.status === 404) {
           userFriendlyMessage =
             "Planilha não encontrada. Verifique se o ID da planilha está correto e se você tem acesso a ela."
@@ -109,11 +156,18 @@ class ServerGoogleSheetsIntegration {
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedSheetName}?key=${this.apiKey}`
       console.log("Request URL:", url)
 
+      // Get current origin for referrer
+      const origin = await this.getCurrentOrigin()
+
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
+          Referer: origin,
+          Origin: origin,
+          "User-Agent": "Mozilla/5.0 (compatible; NextJS-GoogleSheets/1.0)",
         },
+        method: "GET",
       })
 
       console.log("Response status:", response.status)
@@ -124,7 +178,17 @@ class ServerGoogleSheetsIntegration {
 
         let userFriendlyMessage = ""
         if (response.status === 403) {
-          userFriendlyMessage = "Acesso negado à aba da planilha. Verifique as permissões."
+          if (errorText.includes("API_KEY_HTTP_REFERRER_BLOCKED") || errorText.includes("referer")) {
+            userFriendlyMessage = `
+ERRO: HTTP Referrer Bloqueado
+
+Para resolver, acesse o Google Cloud Console e remova as restrições de referrer da sua API Key.
+
+Origem atual: ${origin}
+            `
+          } else {
+            userFriendlyMessage = "Acesso negado à aba da planilha. Verifique as permissões."
+          }
         } else if (response.status === 404) {
           userFriendlyMessage = `Aba "${sheetName}" não encontrada na planilha.`
         } else {
