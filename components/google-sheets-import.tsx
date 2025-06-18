@@ -1,17 +1,12 @@
 "use client"
 
+import { DialogTrigger } from "@/components/ui/dialog"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -46,6 +41,25 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
   const [authTimeout, setAuthTimeout] = useState<NodeJS.Timeout | null>(null)
   const [debugInfo, setDebugInfo] = useState<any>(null)
   const [debugResults, setDebugResults] = useState<any>(null)
+  const [importProgress, setImportProgress] = useState<string>("")
+
+  // Debug database function
+  const debugDatabase = async () => {
+    try {
+      const response = await fetch("/api/debug-database")
+      const data = await response.json()
+      console.log("Database debug:", data)
+
+      if (data.success) {
+        toast.success(`Database OK: ${data.counts.tabs} tabs, ${data.counts.rows} rows`)
+      } else {
+        toast.error(`Database error: ${data.error}`)
+      }
+    } catch (error) {
+      console.error("Debug database error:", error)
+      toast.error("Erro ao verificar banco de dados")
+    }
+  }
 
   // Fix hydration issue and check API configuration
   useEffect(() => {
@@ -475,6 +489,7 @@ ${
     if (!previewData) return
 
     setStep("importing")
+    setImportProgress("Iniciando importação...")
 
     try {
       const spreadsheetId = await extractSpreadsheetIdAction(spreadsheetUrl)
@@ -483,6 +498,8 @@ ${
       if (!accessToken) {
         throw new Error("Token de acesso não encontrado")
       }
+
+      setImportProgress("Obtendo dados completos da planilha...")
 
       // Try debug endpoint first for full data
       let data = null
@@ -506,16 +523,24 @@ ${
         throw new Error("Nenhum dado encontrado para importar")
       }
 
+      setImportProgress(`Criando aba e inserindo ${data.length - 1} registros...`)
+
       const result = await importGoogleSheetAction(selectedSheet, data)
 
+      console.log("Import result:", result)
+
       if (result.success) {
-        toast.success(`Aba "${selectedSheet}" importada com sucesso! ${data.length - 1} registros importados.`)
+        let message = `Aba "${selectedSheet}" importada com sucesso! ${result.rowsCreated} registros criados.`
+        if (result.rowsFailed > 0) {
+          message += ` (${result.rowsFailed} registros falharam)`
+        }
+        toast.success(message)
         setIsOpen(false)
         onImportComplete()
         resetState()
       } else {
-        toast.error("Erro ao importar dados")
-        setStep("preview")
+        console.error("Import failed:", result)
+        throw new Error(result.error || "Falha na importação")
       }
     } catch (error: any) {
       console.error("Import error:", error)
@@ -532,6 +557,7 @@ ${
     setPreviewData(null)
     setError(null)
     setDebugResults(null)
+    setImportProgress("")
     if (authTimeout) {
       clearTimeout(authTimeout)
       setAuthTimeout(null)
@@ -563,6 +589,9 @@ ${
                   <span className="font-medium">Informações de Debug</span>
                   <Button variant="outline" size="sm" onClick={testServerConfig}>
                     Testar Config
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={debugDatabase}>
+                    Debug Database
                   </Button>
                 </div>
                 <div className="space-y-1">
@@ -799,7 +828,7 @@ ${
           <div className="text-center space-y-4">
             <LoadingSpinner size="lg" />
             <p>Importando dados...</p>
-            <p className="text-sm text-gray-500">Criando aba e inserindo registros no banco de dados.</p>
+            <p className="text-sm text-gray-500">{importProgress}</p>
           </div>
         )
 

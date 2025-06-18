@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers"
 import type { TabData, Column } from "../types"
-import { createTabAction } from "./actions"
+import { createTabAction, createRowAction } from "./actions"
 
 // Server-side Google Sheets integration
 class ServerGoogleSheetsIntegration {
@@ -335,7 +335,7 @@ Origem atual detectada: ${origin}
         const hasContent = row.some((cell) => {
           if (cell === null || cell === undefined) return false
           const cellStr = cell.toString().trim()
-          return cellStr !== "" && cellStr !== "0" // Don't filter out zeros
+          return cellStr !== ""
         })
         console.log("Row filter check:", { row: row.slice(0, 3), hasContent, fullRow: row })
         return hasContent
@@ -345,98 +345,23 @@ Origem atual detectada: ${origin}
       console.log("Filtered rows sample:", filteredRows.slice(0, 3))
       console.log("FULL FILTERED ROWS:", filteredRows) // Log completo das linhas filtradas
 
-      if (filteredRows.length === 0) {
-        console.error("❌ All rows were filtered out!")
-        console.error("Original rows:", rows)
-        console.error("Headers:", headers)
+      // Use filtered rows if we have them, otherwise use all rows
+      const finalRows = filteredRows.length > 0 ? filteredRows : rows
 
-        // Let's be even more lenient and include all rows
-        console.log("🔄 Using all rows without filtering...")
-        const allRows = rows.map((row, index) => {
-          console.log(`Row ${index}:`, row)
-          return row
-        })
-
-        if (allRows.length === 0) {
-          throw new Error("Planilha não contém dados válidos para importar (todas as linhas estão vazias)")
-        }
-
-        // Use all rows
-        const tabRows = allRows.map((row, index) => {
-          const rowData: any = {
-            id: `imported-${Date.now()}-${index}`,
-          }
-
-          headers.forEach((header, colIndex) => {
-            const key = this.sanitizeKey(header)
-            const cellValue = row[colIndex]
-            // Convert null/undefined to empty string, but preserve other values including 0
-            rowData[key] = cellValue !== null && cellValue !== undefined ? cellValue.toString() : ""
-            console.log(`Row ${index}, Column ${header} (${key}):`, cellValue, "->", rowData[key])
-          })
-
-          console.log(`✅ Created row ${index}:`, rowData)
-          return rowData
-        })
-
-        // Create columns based on headers
-        const columns: Column[] = headers.map((header, index) => {
-          const key = this.sanitizeKey(header)
-          const width = this.estimateColumnWidth(
-            header,
-            allRows.map((row) => row[index] || ""),
-          )
-
-          const columnType = this.detectColumnType(
-            header,
-            allRows.map((row) => row[index] || ""),
-          )
-
-          const column: Column = {
-            key,
-            label: header,
-            type: columnType,
-            width,
-          }
-
-          if (columnType === "select") {
-            column.options = this.extractSelectOptions(allRows.map((row) => row[index] || ""))
-          }
-
-          console.log(`✅ Created column:`, column)
-          return column
-        })
-
-        const result: TabData = {
-          id: `imported-${this.sanitizeKey(sheetName)}-${Date.now()}`,
-          name: sheetName,
-          columns,
-          rows: tabRows,
-        }
-
-        console.log("✅ TabData conversion completed successfully (using all rows)")
-        console.log(
-          "Final columns:",
-          columns.map((c) => c.label),
-        )
-        console.log("Final rows count:", tabRows.length)
-        console.log("Sample row data:", tabRows[0])
-        console.log("FULL RESULT:", result)
-        console.log("=== convertToTabData END ===")
-        return result
-      }
+      console.log("Final rows to process:", finalRows.length)
+      console.log("Final rows sample:", finalRows.slice(0, 3))
 
       // Create columns based on headers
       const columns: Column[] = headers.map((header, index) => {
         const key = this.sanitizeKey(header)
         const width = this.estimateColumnWidth(
           header,
-          filteredRows.map((row) => row[index] || ""),
+          finalRows.map((row) => row[index] || ""),
         )
 
         const columnType = this.detectColumnType(
           header,
-          filteredRows.map((row) => row[index] || ""),
+          finalRows.map((row) => row[index] || ""),
         )
 
         const column: Column = {
@@ -447,7 +372,7 @@ Origem atual detectada: ${origin}
         }
 
         if (columnType === "select") {
-          column.options = this.extractSelectOptions(filteredRows.map((row) => row[index] || ""))
+          column.options = this.extractSelectOptions(finalRows.map((row) => row[index] || ""))
         }
 
         console.log(`✅ Created column:`, column)
@@ -455,7 +380,7 @@ Origem atual detectada: ${origin}
       })
 
       // Create data rows
-      const tabRows = filteredRows.map((row, index) => {
+      const tabRows = finalRows.map((row, index) => {
         const rowData: any = {
           id: `imported-${Date.now()}-${index}`,
         }
@@ -463,7 +388,7 @@ Origem atual detectada: ${origin}
         headers.forEach((header, colIndex) => {
           const key = this.sanitizeKey(header)
           const cellValue = row[colIndex]
-          // Convert null/undefined to empty string, but preserve other values including 0
+          // Convert null/undefined to empty string, but preserve other values
           rowData[key] = cellValue !== null && cellValue !== undefined ? cellValue.toString() : ""
           console.log(`Row ${index}, Column ${header} (${key}):`, cellValue, "->", rowData[key])
         })
@@ -618,6 +543,7 @@ export async function importGoogleSheetAction(sheetName: string, data: string[][
     console.log("All data sample:", data?.slice(0, 3) || [])
     console.log("FULL DATA RECEIVED:", data) // Log completo dos dados recebidos
 
+    // Convert data to TabData format
     const tabData = sheetsIntegration.convertToTabData(sheetName, data)
 
     console.log("✅ Converted TabData:")
@@ -628,14 +554,63 @@ export async function importGoogleSheetAction(sheetName: string, data: string[][
     console.log("- Sample row:", tabData.rows[0])
     console.log("- FULL TAB DATA:", tabData) // Log completo do TabData
 
-    console.log("🚀 Calling createTabAction...")
-    const result = await createTabAction(tabData)
+    // First create the tab (without rows)
+    console.log("🚀 Step 1: Creating tab...")
+    const tabResult = await createTabAction({
+      id: tabData.id,
+      name: tabData.name,
+      columns: tabData.columns,
+    })
 
-    console.log("✅ Database result:", result)
+    console.log("✅ Tab creation result:", tabResult)
+
+    if (!tabResult.success) {
+      throw new Error(`Failed to create tab: ${tabResult.error}`)
+    }
+
+    // Then create each row
+    console.log("🚀 Step 2: Creating rows...")
+    let successfulRows = 0
+    let failedRows = 0
+
+    for (let i = 0; i < tabData.rows.length; i++) {
+      const row = tabData.rows[i]
+      console.log(`Creating row ${i + 1}/${tabData.rows.length}:`, row)
+
+      try {
+        const rowResult = await createRowAction(tabData.id, row)
+        console.log(`Row ${i + 1} result:`, rowResult)
+
+        if (rowResult.success) {
+          successfulRows++
+        } else {
+          failedRows++
+          console.error(`Failed to create row ${i + 1}:`, rowResult.error)
+        }
+      } catch (rowError: any) {
+        failedRows++
+        console.error(`Exception creating row ${i + 1}:`, rowError.message)
+      }
+    }
+
+    console.log("✅ Row creation summary:")
+    console.log(`- Successful rows: ${successfulRows}`)
+    console.log(`- Failed rows: ${failedRows}`)
+    console.log(`- Total rows: ${tabData.rows.length}`)
+
+    if (successfulRows === 0) {
+      throw new Error("Failed to create any rows")
+    }
+
     console.log("=== SERVER ACTION: importGoogleSheetAction SUCCESS ===")
-    console.log("Created tab with rows:", tabData.rows.length)
+    console.log(`Created tab with ${successfulRows} rows (${failedRows} failed)`)
 
-    return result
+    return {
+      success: true,
+      tabId: tabData.id,
+      rowsCreated: successfulRows,
+      rowsFailed: failedRows,
+    }
   } catch (error: any) {
     console.error("=== SERVER ACTION: importGoogleSheetAction ERROR ===")
     console.error("Error message:", error.message)
