@@ -1,17 +1,12 @@
 "use client"
 
+import { DialogTrigger } from "@/components/ui/dialog"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -96,9 +91,65 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
       }
 
       console.log("Authentication successful, fetching spreadsheet info...")
-      const info = await getSpreadsheetInfoAction(spreadsheetId, accessToken)
-      setSpreadsheetInfo(info)
-      setStep("sheets")
+
+      try {
+        const info = await getSpreadsheetInfoAction(spreadsheetId, accessToken)
+        setSpreadsheetInfo(info)
+        setStep("sheets")
+      } catch (apiError: any) {
+        console.error("API Error:", apiError)
+
+        // Handle specific API errors
+        if (apiError.message.includes("403") || apiError.message.includes("Acesso negado")) {
+          setError(`
+Erro de Permissão (403):
+
+A planilha foi encontrada, mas você não tem permissão para acessá-la.
+
+SOLUÇÕES:
+1. Verifique se você tem acesso à planilha no Google Sheets
+2. Certifique-se de que a planilha não é privada
+3. Peça ao proprietário para compartilhar a planilha com você
+4. Verifique se a Google Sheets API está habilitada no seu projeto
+
+URL da planilha: ${spreadsheetUrl}
+ID extraído: ${spreadsheetId}
+          `)
+        } else if (apiError.message.includes("404") || apiError.message.includes("não encontrada")) {
+          setError(`
+Planilha Não Encontrada (404):
+
+A planilha com este ID não foi encontrada.
+
+SOLUÇÕES:
+1. Verifique se a URL está correta
+2. Certifique-se de que a planilha não foi deletada
+3. Verifique se você tem acesso à planilha
+
+URL da planilha: ${spreadsheetUrl}
+ID extraído: ${spreadsheetId}
+          `)
+        } else {
+          setError(`
+Erro ao Acessar Planilha:
+
+${apiError.message}
+
+INFORMAÇÕES DE DEBUG:
+- URL: ${spreadsheetUrl}
+- ID: ${spreadsheetId}
+- Token: ${accessToken ? "Presente" : "Ausente"}
+
+Tente novamente ou verifique se:
+1. A Google Sheets API está habilitada
+2. As credenciais estão corretas
+3. A planilha existe e você tem acesso
+          `)
+        }
+
+        setStep("url")
+        toast.error("Erro ao acessar planilha. Verifique as instruções abaixo.")
+      }
     } catch (error: any) {
       console.error("Erro na autenticação:", error)
 
