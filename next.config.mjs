@@ -12,6 +12,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Force development mode error handling
+  productionBrowserSourceMaps: true,
+  experimental: {
+    serverComponentsExternalPackages: [],
+  },
 }
 
 export default nextConfig

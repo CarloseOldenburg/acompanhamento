@@ -67,6 +67,35 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
     }
   }
 
+  // Debug Google Sheets API directly
+  const debugGoogleSheetsAPI = async (spreadsheetId: string, accessToken: string) => {
+    try {
+      console.log("=== DEBUGGING GOOGLE SHEETS API ===")
+      const response = await fetch("/api/debug-google-sheets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          spreadsheetId,
+          accessToken,
+        }),
+      })
+
+      const result = await response.json()
+      console.log("Debug API result:", result)
+
+      if (result.success) {
+        return result.data
+      } else {
+        throw new Error(result.error || "Debug API failed")
+      }
+    } catch (error: any) {
+      console.error("Debug API error:", error)
+      throw error
+    }
+  }
+
   const handleUrlSubmit = async () => {
     setError(null)
 
@@ -117,57 +146,65 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
       console.log("Fetching spreadsheet info...")
 
       try {
-        const info = await getSpreadsheetInfoAction(spreadsheetId, accessToken)
-        console.log("Spreadsheet info received:", info)
-        setSpreadsheetInfo(info)
+        // First try the debug endpoint to get detailed error information
+        console.log("=== TRYING DEBUG ENDPOINT FIRST ===")
+        const debugResult = await debugGoogleSheetsAPI(spreadsheetId, accessToken)
+        console.log("Debug endpoint success:", debugResult)
+
+        // If debug works, convert to expected format
+        const spreadsheetInfo = {
+          properties: { title: debugResult.title },
+          sheets: debugResult.sheets.map((sheet: any) => ({
+            properties: {
+              sheetId: sheet.id,
+              title: sheet.title,
+              gridProperties: {
+                rowCount: sheet.rowCount,
+                columnCount: sheet.columnCount,
+              },
+            },
+          })),
+        }
+
+        setSpreadsheetInfo(spreadsheetInfo)
         setStep("sheets")
-      } catch (apiError: any) {
-        console.error("API Error details:", {
-          message: apiError.message,
-          name: apiError.name,
-          stack: apiError.stack,
-        })
+      } catch (debugError: any) {
+        console.error("Debug endpoint failed, trying server action:", debugError)
 
-        // Handle specific API errors
-        if (apiError.message.includes("403") || apiError.message.includes("Acesso negado")) {
-          setError(`
-Erro de Permissão (403):
+        // If debug fails, try the original server action
+        try {
+          const info = await getSpreadsheetInfoAction(spreadsheetId, accessToken)
+          console.log("Server action success:", info)
+          setSpreadsheetInfo(info)
+          setStep("sheets")
+        } catch (serverActionError: any) {
+          console.error("Server action also failed:", serverActionError)
 
-A planilha foi encontrada, mas você não tem permissão para acessá-la.
+          // Show detailed error from debug endpoint if available
+          if (debugError.message && debugError.message !== "Debug API failed") {
+            setError(`
+Erro detalhado da API do Google Sheets:
 
-SOLUÇÕES:
-1. Verifique se você tem acesso à planilha no Google Sheets
-2. Certifique-se de que a planilha não é privada
-3. Peça ao proprietário para compartilhar a planilha com você
-4. Verifique se a Google Sheets API está habilitada no seu projeto
+${debugError.message}
 
-URL da planilha: ${spreadsheetUrl}
-ID extraído: ${spreadsheetId}
-
-DEBUG INFO:
-- Client ID configurado: ${apiConfig?.hasClientId ? "Sim" : "Não"}
-- API Key configurado: ${apiConfig?.hasApiKey ? "Sim" : "Não"}
+INFORMAÇÕES DE DEBUG:
+- URL: ${spreadsheetUrl}
+- ID: ${spreadsheetId}
 - Token length: ${accessToken.length}
-          `)
-        } else if (apiError.message.includes("404") || apiError.message.includes("não encontrada")) {
-          setError(`
-Planilha Não Encontrada (404):
+- Client ID: ${apiConfig?.hasClientId ? "Configurado" : "Não configurado"}
+- API Key: ${apiConfig?.hasApiKey ? "Configurado" : "Não configurado"}
 
-A planilha com este ID não foi encontrada.
+POSSÍVEIS SOLUÇÕES:
+1. Verifique se a planilha é pública ou se você tem acesso
+2. Certifique-se de que a Google Sheets API está habilitada
+3. Verifique se as credenciais OAuth estão corretas
+4. Tente compartilhar a planilha publicamente
+            `)
+          } else {
+            setError(`
+Erro ao acessar planilha:
 
-SOLUÇÕES:
-1. Verifique se a URL está correta
-2. Certifique-se de que a planilha não foi deletada
-3. Verifique se você tem acesso à planilha
-
-URL da planilha: ${spreadsheetUrl}
-ID extraído: ${spreadsheetId}
-          `)
-        } else {
-          setError(`
-Erro ao Acessar Planilha:
-
-${apiError.message}
+${serverActionError.message}
 
 INFORMAÇÕES DE DEBUG:
 - URL: ${spreadsheetUrl}
@@ -176,16 +213,12 @@ INFORMAÇÕES DE DEBUG:
 - Token length: ${accessToken?.length || 0}
 - Client ID: ${apiConfig?.hasClientId ? "Configurado" : "Não configurado"}
 - API Key: ${apiConfig?.hasApiKey ? "Configurado" : "Não configurado"}
+            `)
+          }
 
-Tente novamente ou verifique se:
-1. A Google Sheets API está habilitada
-2. As credenciais estão corretas
-3. A planilha existe e você tem acesso
-          `)
+          setStep("url")
+          toast.error("Erro ao acessar planilha. Verifique as instruções abaixo.")
         }
-
-        setStep("url")
-        toast.error("Erro ao acessar planilha. Verifique as instruções abaixo.")
       }
     } catch (error: any) {
       console.error("Erro na autenticação:", error)
@@ -353,10 +386,10 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
             )}
 
             {error && (
-              <div className="text-sm text-red-500 p-3 bg-red-50 rounded-md border border-red-200">
+              <div className="text-sm text-red-500 p-3 bg-red-50 rounded-md border border-red-200 max-h-60 overflow-y-auto">
                 <div className="flex items-center gap-2 font-medium mb-2">
                   <AlertTriangle className="w-4 h-4" />
-                  Erro de Configuração
+                  Erro Detalhado
                 </div>
                 <div className="mb-3 whitespace-pre-line">{error}</div>
                 <div className="text-xs space-y-1">
