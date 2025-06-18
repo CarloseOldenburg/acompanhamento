@@ -309,6 +309,7 @@ Origem atual detectada: ${origin}
       console.log("=== convertToTabData START ===")
       console.log("Sheet name:", sheetName)
       console.log("Data rows:", data.length)
+      console.log("Raw data sample:", data.slice(0, 3))
 
       if (!data || data.length === 0) {
         throw new Error("Planilha vazia ou sem dados")
@@ -324,16 +325,99 @@ Origem atual detectada: ${origin}
       console.log("Headers:", headers)
       console.log("Data rows count:", rows.length)
       console.log("First data row sample:", rows[0]?.slice(0, 3) || [])
+      console.log("All rows sample:", rows.slice(0, 3))
 
-      // Filter out completely empty rows
-      const filteredRows = rows.filter((row) =>
-        row.some((cell) => cell !== null && cell !== undefined && cell.toString().trim() !== ""),
-      )
+      // Filter out completely empty rows - but be more lenient
+      const filteredRows = rows.filter((row) => {
+        // Check if row has any non-empty content
+        const hasContent = row.some((cell) => {
+          if (cell === null || cell === undefined) return false
+          const cellStr = cell.toString().trim()
+          return cellStr !== "" && cellStr !== "0" // Don't filter out zeros
+        })
+        console.log("Row filter check:", { row: row.slice(0, 3), hasContent })
+        return hasContent
+      })
 
       console.log("Filtered rows count (non-empty):", filteredRows.length)
+      console.log("Filtered rows sample:", filteredRows.slice(0, 3))
 
       if (filteredRows.length === 0) {
-        throw new Error("Planilha não contém dados válidos para importar (todas as linhas estão vazias)")
+        console.error("All rows were filtered out!")
+        console.error("Original rows:", rows)
+        console.error("Headers:", headers)
+
+        // Let's be even more lenient and include all rows
+        console.log("Using all rows without filtering...")
+        const allRows = rows.map((row, index) => {
+          console.log(`Row ${index}:`, row)
+          return row
+        })
+
+        if (allRows.length === 0) {
+          throw new Error("Planilha não contém dados válidos para importar (todas as linhas estão vazias)")
+        }
+
+        // Use all rows
+        const tabRows = allRows.map((row, index) => {
+          const rowData: any = {
+            id: `imported-${Date.now()}-${index}`,
+          }
+
+          headers.forEach((header, colIndex) => {
+            const key = this.sanitizeKey(header)
+            const cellValue = row[colIndex]
+            // Convert null/undefined to empty string, but preserve other values including 0
+            rowData[key] = cellValue !== null && cellValue !== undefined ? cellValue.toString() : ""
+          })
+
+          console.log(`Created row ${index}:`, rowData)
+          return rowData
+        })
+
+        // Create columns based on headers
+        const columns: Column[] = headers.map((header, index) => {
+          const key = this.sanitizeKey(header)
+          const width = this.estimateColumnWidth(
+            header,
+            allRows.map((row) => row[index] || ""),
+          )
+
+          const columnType = this.detectColumnType(
+            header,
+            allRows.map((row) => row[index] || ""),
+          )
+
+          const column: Column = {
+            key,
+            label: header,
+            type: columnType,
+            width,
+          }
+
+          if (columnType === "select") {
+            column.options = this.extractSelectOptions(allRows.map((row) => row[index] || ""))
+          }
+
+          return column
+        })
+
+        const result: TabData = {
+          id: `imported-${this.sanitizeKey(sheetName)}-${Date.now()}`,
+          name: sheetName,
+          columns,
+          rows: tabRows,
+        }
+
+        console.log("TabData conversion completed successfully (using all rows)")
+        console.log(
+          "Final columns:",
+          columns.map((c) => c.label),
+        )
+        console.log("Final rows count:", tabRows.length)
+        console.log("Sample row data:", tabRows[0])
+        console.log("=== convertToTabData END ===")
+        return result
       }
 
       // Create columns based on headers
@@ -376,6 +460,7 @@ Origem atual detectada: ${origin}
           rowData[key] = cellValue !== null && cellValue !== undefined ? cellValue.toString() : ""
         })
 
+        console.log(`Created row ${index}:`, rowData)
         return rowData
       })
 
@@ -520,17 +605,28 @@ export async function importGoogleSheetAction(sheetName: string, data: string[][
     console.log("Data rows received:", data?.length || 0)
     console.log("First row sample:", data?.[0]?.slice(0, 3) || [])
     console.log("Second row sample:", data?.[1]?.slice(0, 3) || [])
+    console.log("All data sample:", data?.slice(0, 3) || [])
 
     const tabData = sheetsIntegration.convertToTabData(sheetName, data)
+
+    console.log("Converted TabData:")
+    console.log("- ID:", tabData.id)
+    console.log("- Name:", tabData.name)
+    console.log("- Columns count:", tabData.columns.length)
+    console.log("- Rows count:", tabData.rows.length)
+    console.log("- Sample row:", tabData.rows[0])
+
     const result = await createTabAction(tabData)
 
     console.log("=== SERVER ACTION: importGoogleSheetAction SUCCESS ===")
     console.log("Created tab with rows:", tabData.rows.length)
+    console.log("Database result:", result)
 
     return result
   } catch (error: any) {
     console.error("=== SERVER ACTION: importGoogleSheetAction ERROR ===")
     console.error("Error message:", error.message)
+    console.error("Error stack:", error.stack)
     console.error("=== SERVER ACTION: importGoogleSheetAction ERROR END ===")
     throw new Error(error.message || "Erro ao importar planilha")
   }
