@@ -32,27 +32,20 @@ export class ClientGoogleAuth {
       console.log("Possible redirect URIs that should be configured:", possibleRedirectUris)
 
       // Use tokenClient for authentication with popup mode (doesn't require redirect URI)
-      const tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
-        // Remove redirect_uri to use popup mode instead
-        callback: (response: any) => {
-          if (response.access_token) {
-            this.accessToken = response.access_token
-          }
-        },
-      })
-
-      // Request token using popup mode
       return new Promise((resolve, reject) => {
         try {
-          tokenClient.requestAccessToken({
-            prompt: "consent",
+          const tokenClient = window.google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
             callback: (response: any) => {
+              console.log("OAuth response:", response)
+
               if (response && response.access_token) {
                 this.accessToken = response.access_token
+                console.log("Access token received successfully")
                 resolve(response.access_token)
               } else if (response && response.error) {
+                console.error("OAuth error:", response.error)
                 if (response.error === "redirect_uri_mismatch") {
                   const errorMessage = `
 Erro de configuração OAuth: redirect_uri_mismatch
@@ -71,17 +64,37 @@ ${possibleRedirectUris.map((uri) => `   • ${uri}`).join("\n")}
 7. Tente novamente
 
 URI atual detectado: ${currentOrigin}
-                `
+                  `
                   reject(new Error(errorMessage))
                 } else {
                   reject(new Error(`Erro OAuth: ${response.error}`))
                 }
               } else {
+                console.log("No access token or error in response")
                 resolve(null)
               }
             },
           })
+
+          // Add timeout to prevent hanging
+          const timeout = setTimeout(() => {
+            console.log("Authentication timeout")
+            reject(new Error("Timeout na autenticação. Tente novamente."))
+          }, 30000) // 30 seconds timeout
+
+          // Request token using popup mode
+          tokenClient.requestAccessToken({
+            prompt: "consent",
+          })
+
+          // Clear timeout if successful
+          const originalCallback = tokenClient.callback
+          tokenClient.callback = (response: any) => {
+            clearTimeout(timeout)
+            originalCallback(response)
+          }
         } catch (error) {
+          console.error("Error in token client setup:", error)
           reject(error)
         }
       })

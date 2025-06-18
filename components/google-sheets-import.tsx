@@ -4,11 +4,18 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { FileSpreadsheet, Download, CheckCircle, AlertTriangle } from "lucide-react"
+import { FileSpreadsheet, Download, CheckCircle, AlertTriangle, Clock } from "lucide-react"
 import { toast } from "sonner"
 import { ClientGoogleAuth } from "../lib/client-google-auth"
 import { LoadingSpinner } from "./loading-spinner"
@@ -36,6 +43,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
   const [mounted, setMounted] = useState(false)
   const [googleAuth] = useState(() => new ClientGoogleAuth())
   const [apiConfig, setApiConfig] = useState<any>(null)
+  const [authTimeout, setAuthTimeout] = useState<NodeJS.Timeout | null>(null)
 
   // Fix hydration issue and check API configuration
   useEffect(() => {
@@ -64,17 +72,41 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
 
     setStep("auth")
 
+    // Set timeout for authentication
+    const timeout = setTimeout(() => {
+      setError("Timeout na autenticação. A janela de autorização pode ter sido bloqueada ou fechada.")
+      setStep("url")
+      toast.error("Timeout na autenticação. Tente novamente.")
+    }, 45000) // 45 seconds
+
+    setAuthTimeout(timeout)
+
     try {
+      console.log("Starting authentication...")
       const accessToken = await googleAuth.authenticate()
+
+      // Clear timeout on success
+      if (authTimeout) {
+        clearTimeout(authTimeout)
+        setAuthTimeout(null)
+      }
+
       if (!accessToken) {
         throw new Error("Falha na autenticação com Google")
       }
 
+      console.log("Authentication successful, fetching spreadsheet info...")
       const info = await getSpreadsheetInfoAction(spreadsheetId, accessToken)
       setSpreadsheetInfo(info)
       setStep("sheets")
     } catch (error: any) {
       console.error("Erro na autenticação:", error)
+
+      // Clear timeout on error
+      if (authTimeout) {
+        clearTimeout(authTimeout)
+        setAuthTimeout(null)
+      }
 
       // Handle specific OAuth errors with detailed instructions
       if (error.message.includes("redirect_uri_mismatch")) {
@@ -88,22 +120,22 @@ INSTRUÇÕES PARA RESOLVER:
 3. Clique na sua credencial OAuth 2.0
 4. Na seção "URIs de redirecionamento autorizados", adicione:
 
-   • ${mounted ? window.location.origin : "https://seu-dominio.com"}
-   • ${mounted ? window.location.origin + "/" : "https://seu-dominio.com/"}
-   • http://localhost:3000
-   • https://localhost:3000
+ • ${mounted ? window.location.origin : "https://seu-dominio.com"}
+ • ${mounted ? window.location.origin + "/" : "https://seu-dominio.com/"}
+ • http://localhost:3000
+ • https://localhost:3000
 
 5. Salve e aguarde alguns minutos
 6. Tente novamente
 
 Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
-    `)
+        `)
       } else {
         setError(error.message || "Erro ao acessar planilha")
       }
 
       setStep("url")
-      toast.error("Erro de configuração OAuth. Verifique as instruções abaixo.")
+      toast.error("Erro na autenticação. Verifique as instruções abaixo.")
     }
   }
 
@@ -112,7 +144,6 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
 
     try {
       const spreadsheetId = await extractSpreadsheetIdAction(spreadsheetUrl)
-
       const accessToken = googleAuth.getAccessToken()
 
       if (!accessToken) {
@@ -191,6 +222,10 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
     setSelectedSheet("")
     setPreviewData(null)
     setError(null)
+    if (authTimeout) {
+      clearTimeout(authTimeout)
+      setAuthTimeout(null)
+    }
   }
 
   const renderStepContent = () => {
@@ -216,7 +251,7 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
                   <AlertTriangle className="w-4 h-4" />
                   Erro de Configuração
                 </div>
-                <div className="mb-3">{error}</div>
+                <div className="mb-3 whitespace-pre-line">{error}</div>
                 <div className="text-xs space-y-1">
                   <div className="font-medium">Para configurar o Google Sheets:</div>
                   <div>1. Acesse o Google Cloud Console</div>
@@ -246,11 +281,34 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
       case "auth":
         return (
           <div className="text-center space-y-4">
-            <LoadingSpinner size="lg" />
-            <p>Autenticando com Google...</p>
-            <p className="text-sm text-gray-500">
-              Uma janela de autorização será aberta. Permita o acesso às suas planilhas.
-            </p>
+            <div className="flex items-center justify-center">
+              <div className="relative">
+                <LoadingSpinner size="lg" />
+                <Clock className="w-6 h-6 text-blue-500 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+            <div>
+              <p className="font-medium">Autenticando com Google...</p>
+              <p className="text-sm text-gray-500 mt-2">
+                Uma janela de autorização será aberta. Permita o acesso às suas planilhas.
+              </p>
+              <p className="text-xs text-gray-400 mt-2">
+                Se a janela não abrir, verifique se o bloqueador de pop-ups está desabilitado.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (authTimeout) {
+                  clearTimeout(authTimeout)
+                  setAuthTimeout(null)
+                }
+                setStep("url")
+              }}
+              className="mt-4"
+            >
+              Cancelar
+            </Button>
           </div>
         )
 
@@ -410,6 +468,9 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
             <FileSpreadsheet className="w-5 h-5 text-green-600" />
             <span>Importar do Google Sheets</span>
           </DialogTitle>
+          <DialogDescription>
+            Importe dados diretamente de uma planilha do Google Sheets para o sistema.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="py-4" suppressHydrationWarning>

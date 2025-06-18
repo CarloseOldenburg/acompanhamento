@@ -8,13 +8,13 @@ import { OptimizedSpreadsheetTable } from "../components/optimized-spreadsheet-t
 import { EnhancedDashboard } from "../components/enhanced-dashboard"
 import { HeroSection } from "../components/hero-section"
 import { TabManager } from "../components/tab-manager"
-import { GoogleSheetsImport } from "../components/google-sheets-import"
 import { ClientOnly } from "../components/client-only"
 import { useOptimizedData } from "../hooks/useOptimizedData"
 import { LoadingSpinner } from "../components/loading-spinner"
 import type { DashboardData } from "../types"
 import Link from "next/link"
 import { toast } from "sonner"
+import { GoogleSheetsImport } from "../components/google-sheets-import"
 
 export default function AcompanhamentoApp() {
   const { tabs, loading, refreshData } = useOptimizedData()
