@@ -152,58 +152,149 @@ Origem atual detectada: ${origin}
         throw new Error("Access token is required")
       }
 
+      // Try different range formats to ensure we get all data
       const encodedSheetName = encodeURIComponent(sheetName)
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedSheetName}?key=${this.apiKey}`
-      console.log("Request URL:", url)
 
-      // Get current origin for referrer
-      const origin = await this.getCurrentOrigin()
+      // First try to get all data with a large range
+      const ranges = [
+        `${encodedSheetName}!A:ZZ`, // All columns from A to ZZ
+        `${encodedSheetName}!A1:ZZ1000`, // Specific range
+        `${encodedSheetName}`, // Just the sheet name
+        encodedSheetName, // Encoded sheet name only
+      ]
 
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          Referer: origin,
-          Origin: origin,
-          "User-Agent": "Mozilla/5.0 (compatible; NextJS-GoogleSheets/1.0)",
-        },
-        method: "GET",
-      })
+      let data = null
+      let successfulUrl = ""
 
-      console.log("Response status:", response.status)
+      for (const range of ranges) {
+        try {
+          const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${this.apiKey}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`
+          console.log(`Trying URL: ${url}`)
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("Sheet API Error Response:", errorText)
+          // Get current origin for referrer
+          const origin = await this.getCurrentOrigin()
 
-        let userFriendlyMessage = ""
-        if (response.status === 403) {
-          if (errorText.includes("API_KEY_HTTP_REFERRER_BLOCKED") || errorText.includes("referer")) {
-            userFriendlyMessage = `
-ERRO: HTTP Referrer Bloqueado
+          const response = await fetch(url, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+              Referer: origin,
+              Origin: origin,
+              "User-Agent": "Mozilla/5.0 (compatible; NextJS-GoogleSheets/1.0)",
+            },
+            method: "GET",
+          })
 
-Para resolver, acesse o Google Cloud Console e remova as restrições de referrer da sua API Key.
+          console.log(`Response status for ${range}:`, response.status)
 
-Origem atual: ${origin}
-            `
+          if (response.ok) {
+            const responseData = await response.json()
+            console.log(`Response data for ${range}:`, {
+              range: responseData.range,
+              majorDimension: responseData.majorDimension,
+              valuesLength: responseData.values?.length || 0,
+              firstRowSample: responseData.values?.[0]?.slice(0, 3) || [],
+              secondRowSample: responseData.values?.[1]?.slice(0, 3) || [],
+            })
+
+            if (responseData.values && responseData.values.length > 0) {
+              data = responseData.values
+              successfulUrl = url
+              console.log(`✅ Successfully got data with range: ${range}`)
+              break
+            } else {
+              console.log(`⚠️ No data returned for range: ${range}`)
+            }
           } else {
-            userFriendlyMessage = "Acesso negado à aba da planilha. Verifique as permissões."
+            const errorText = await response.text()
+            console.log(`❌ Error for range ${range}:`, response.status, errorText)
           }
-        } else if (response.status === 404) {
-          userFriendlyMessage = `Aba "${sheetName}" não encontrada na planilha.`
-        } else {
-          userFriendlyMessage = `Erro ${response.status}: ${errorText}`
+        } catch (rangeError: any) {
+          console.log(`❌ Exception for range ${range}:`, rangeError.message)
         }
-
-        throw new Error(userFriendlyMessage)
       }
 
-      const data = await response.json()
-      console.log("Sheet data retrieved successfully")
-      console.log("Number of rows:", data.values?.length || 0)
+      if (!data) {
+        console.error("❌ No data could be retrieved with any range format")
+
+        // Try one more time with the basic API call to see what's available
+        try {
+          const basicUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${this.apiKey}&includeGridData=true`
+          console.log("Trying basic spreadsheet info with grid data:", basicUrl)
+
+          const origin = await this.getCurrentOrigin()
+          const basicResponse = await fetch(basicUrl, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+              Referer: origin,
+              Origin: origin,
+              "User-Agent": "Mozilla/5.0 (compatible; NextJS-GoogleSheets/1.0)",
+            },
+            method: "GET",
+          })
+
+          if (basicResponse.ok) {
+            const basicData = await basicResponse.json()
+            console.log("Basic spreadsheet data:", {
+              title: basicData.properties?.title,
+              sheets: basicData.sheets?.map((sheet: any) => ({
+                title: sheet.properties?.title,
+                rowCount: sheet.properties?.gridProperties?.rowCount,
+                columnCount: sheet.properties?.gridProperties?.columnCount,
+                hasData: !!sheet.data?.[0]?.rowData?.length,
+              })),
+            })
+
+            // Try to extract data from the grid data
+            const targetSheet = basicData.sheets?.find((sheet: any) => sheet.properties?.title === sheetName)
+
+            if (targetSheet?.data?.[0]?.rowData) {
+              console.log("Found grid data, extracting...")
+              const gridData = targetSheet.data[0].rowData
+              const extractedData = gridData
+                .map(
+                  (row: any) =>
+                    row.values?.map(
+                      (cell: any) =>
+                        cell.formattedValue ||
+                        cell.userEnteredValue?.stringValue ||
+                        cell.userEnteredValue?.numberValue ||
+                        "",
+                    ) || [],
+                )
+                .filter((row: any[]) => row.some((cell) => cell !== ""))
+
+              if (extractedData.length > 0) {
+                console.log("✅ Successfully extracted data from grid:", {
+                  rows: extractedData.length,
+                  firstRow: extractedData[0]?.slice(0, 3),
+                  secondRow: extractedData[1]?.slice(0, 3),
+                })
+                data = extractedData
+              }
+            }
+          }
+        } catch (basicError: any) {
+          console.error("Basic API call also failed:", basicError.message)
+        }
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error(
+          `Nenhum dado encontrado na aba "${sheetName}". Verifique se a aba contém dados e se você tem permissão para acessá-la.`,
+        )
+      }
+
+      console.log("✅ Final sheet data retrieved successfully")
+      console.log("Number of rows:", data.length)
+      console.log("Number of columns in first row:", data[0]?.length || 0)
+      console.log("First row (headers):", data[0]?.slice(0, 5) || [])
+      console.log("Second row (first data):", data[1]?.slice(0, 5) || [])
+      console.log("Successful URL:", successfulUrl)
       console.log("=== getSheetData END ===")
 
-      return data.values || []
+      return data
     } catch (error: any) {
       console.error("=== getSheetData ERROR ===")
       console.error("Error message:", error.message)
@@ -223,23 +314,39 @@ Origem atual: ${origin}
         throw new Error("Planilha vazia ou sem dados")
       }
 
+      if (data.length === 1) {
+        throw new Error("Planilha contém apenas cabeçalhos, sem dados para importar")
+      }
+
       const headers = data[0]
       const rows = data.slice(1)
 
       console.log("Headers:", headers)
       console.log("Data rows count:", rows.length)
+      console.log("First data row sample:", rows[0]?.slice(0, 3) || [])
+
+      // Filter out completely empty rows
+      const filteredRows = rows.filter((row) =>
+        row.some((cell) => cell !== null && cell !== undefined && cell.toString().trim() !== ""),
+      )
+
+      console.log("Filtered rows count (non-empty):", filteredRows.length)
+
+      if (filteredRows.length === 0) {
+        throw new Error("Planilha não contém dados válidos para importar (todas as linhas estão vazias)")
+      }
 
       // Create columns based on headers
       const columns: Column[] = headers.map((header, index) => {
         const key = this.sanitizeKey(header)
         const width = this.estimateColumnWidth(
           header,
-          rows.map((row) => row[index] || ""),
+          filteredRows.map((row) => row[index] || ""),
         )
 
         const columnType = this.detectColumnType(
           header,
-          rows.map((row) => row[index] || ""),
+          filteredRows.map((row) => row[index] || ""),
         )
 
         const column: Column = {
@@ -250,21 +357,23 @@ Origem atual: ${origin}
         }
 
         if (columnType === "select") {
-          column.options = this.extractSelectOptions(rows.map((row) => row[index] || ""))
+          column.options = this.extractSelectOptions(filteredRows.map((row) => row[index] || ""))
         }
 
         return column
       })
 
       // Create data rows
-      const tabRows = rows.map((row, index) => {
+      const tabRows = filteredRows.map((row, index) => {
         const rowData: any = {
           id: `imported-${Date.now()}-${index}`,
         }
 
         headers.forEach((header, colIndex) => {
           const key = this.sanitizeKey(header)
-          rowData[key] = row[colIndex] || ""
+          const cellValue = row[colIndex]
+          // Convert null/undefined to empty string, but preserve other values including 0
+          rowData[key] = cellValue !== null && cellValue !== undefined ? cellValue.toString() : ""
         })
 
         return rowData
@@ -278,6 +387,12 @@ Origem atual: ${origin}
       }
 
       console.log("TabData conversion completed successfully")
+      console.log(
+        "Final columns:",
+        columns.map((c) => c.label),
+      )
+      console.log("Final rows count:", tabRows.length)
+      console.log("Sample row data:", tabRows[0])
       console.log("=== convertToTabData END ===")
       return result
     } catch (error: any) {
@@ -381,8 +496,14 @@ export async function getSpreadsheetInfoAction(spreadsheetId: string, accessToke
 export async function getSheetDataAction(spreadsheetId: string, sheetName: string, accessToken: string) {
   try {
     console.log("=== SERVER ACTION: getSheetDataAction START ===")
+    console.log("Received params:", { spreadsheetId, sheetName, tokenLength: accessToken?.length })
+
     const result = await sheetsIntegration.getSheetData(spreadsheetId, sheetName, accessToken)
+
     console.log("=== SERVER ACTION: getSheetDataAction SUCCESS ===")
+    console.log("Returned data rows:", result?.length || 0)
+    console.log("First row sample:", result?.[0]?.slice(0, 3) || [])
+
     return result
   } catch (error: any) {
     console.error("=== SERVER ACTION: getSheetDataAction ERROR ===")
@@ -395,9 +516,17 @@ export async function getSheetDataAction(spreadsheetId: string, sheetName: strin
 export async function importGoogleSheetAction(sheetName: string, data: string[][]) {
   try {
     console.log("=== SERVER ACTION: importGoogleSheetAction START ===")
+    console.log("Sheet name:", sheetName)
+    console.log("Data rows received:", data?.length || 0)
+    console.log("First row sample:", data?.[0]?.slice(0, 3) || [])
+    console.log("Second row sample:", data?.[1]?.slice(0, 3) || [])
+
     const tabData = sheetsIntegration.convertToTabData(sheetName, data)
     const result = await createTabAction(tabData)
+
     console.log("=== SERVER ACTION: importGoogleSheetAction SUCCESS ===")
+    console.log("Created tab with rows:", tabData.rows.length)
+
     return result
   } catch (error: any) {
     console.error("=== SERVER ACTION: importGoogleSheetAction ERROR ===")
