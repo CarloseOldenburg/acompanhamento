@@ -438,31 +438,17 @@ Origem atual detectada: ${origin}
   private detectColumnType(header: string, values: string[]): Column["type"] {
     const headerLower = header.toLowerCase()
 
-    // Detect by column name
+    // Detect by column name - only specific fields should be select
+    if (headerLower.includes("status") || headerLower === "status") {
+      return "select"
+    }
+
+    // Date fields
     if (headerLower.includes("data") || headerLower.includes("date")) {
       return "datetime"
     }
 
-    if (headerLower.includes("status") || headerLower.includes("situacao")) {
-      return "select"
-    }
-
-    // Detect by content
-    const nonEmptyValues = values.filter((v) => v && v.trim() !== "")
-    if (nonEmptyValues.length === 0) return "text"
-
-    // If all values are dates
-    const datePattern = /^\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2}/
-    if (nonEmptyValues.length > 0 && nonEmptyValues.every((v) => datePattern.test(v))) {
-      return "date"
-    }
-
-    // If few unique values, might be select
-    const uniqueValues = [...new Set(nonEmptyValues)]
-    if (uniqueValues.length <= 10 && uniqueValues.length > 1 && nonEmptyValues.length > 5) {
-      return "select"
-    }
-
+    // Everything else should be text by default
     return "text"
   }
 
@@ -470,7 +456,9 @@ Origem atual detectada: ${origin}
   private extractSelectOptions(values: string[]): string[] {
     const nonEmptyValues = values.filter((v) => v && v.trim() !== "")
     const uniqueValues = [...new Set(nonEmptyValues)]
-    return uniqueValues.slice(0, 10) // Max 10 options
+
+    // For status fields, return common status options
+    return uniqueValues.length > 0 ? uniqueValues.slice(0, 10) : ["Pendente", "Agendado", "Concluido", "Cancelado"]
   }
 
   // Estimate column width
