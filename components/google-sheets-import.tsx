@@ -15,7 +15,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { FileSpreadsheet, Download, CheckCircle, AlertTriangle, Clock, Bug, ExternalLink } from "lucide-react"
+import { FileSpreadsheet, Download, CheckCircle, AlertTriangle, Clock, Bug, ExternalLink, Search } from "lucide-react"
 import { toast } from "sonner"
 import { ClientGoogleAuth } from "../lib/client-google-auth"
 import { LoadingSpinner } from "./loading-spinner"
@@ -45,6 +45,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
   const [apiConfig, setApiConfig] = useState<any>(null)
   const [authTimeout, setAuthTimeout] = useState<NodeJS.Timeout | null>(null)
   const [debugInfo, setDebugInfo] = useState<any>(null)
+  const [debugResults, setDebugResults] = useState<any>(null)
 
   // Fix hydration issue and check API configuration
   useEffect(() => {
@@ -64,6 +65,46 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
       console.log("Server config test:", data)
     } catch (error) {
       console.error("Error testing server config:", error)
+    }
+  }
+
+  // Debug sheet data specifically
+  const debugSheetData = async (spreadsheetId: string, sheetName: string, accessToken: string) => {
+    try {
+      console.log("=== DEBUGGING SHEET DATA ===")
+      const response = await fetch("/api/debug-sheet-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          spreadsheetId,
+          sheetName,
+          accessToken,
+        }),
+      })
+
+      const result = await response.json()
+      console.log("Sheet data debug result:", result)
+      setDebugResults(result)
+
+      if (result.success && result.summary?.bestResult) {
+        const bestResult = result.summary.bestResult
+        if (bestResult.dataLength > 0) {
+          // Convert the successful result to the expected format
+          const data =
+            bestResult.method === "Grid data API"
+              ? bestResult.extractedData
+              : [bestResult.firstRow, bestResult.secondRow].filter((row) => row.length > 0)
+
+          return data
+        }
+      }
+
+      throw new Error(`Nenhum método conseguiu obter dados da aba "${sheetName}". Verifique se a aba contém dados.`)
+    } catch (error: any) {
+      console.error("Sheet data debug error:", error)
+      throw error
     }
   }
 
@@ -305,10 +346,57 @@ ${serverActionError.message}
         throw new Error("Token de acesso não encontrado")
       }
 
+      console.log("=== GETTING SHEET DATA ===")
+      console.log("Sheet name:", sheetName)
+      console.log("Spreadsheet ID:", spreadsheetId)
+
+      // First try the debug endpoint to see all methods
+      try {
+        console.log("Trying debug sheet data endpoint...")
+        const debugData = await debugSheetData(spreadsheetId, sheetName, accessToken)
+
+        if (debugData && debugData.length > 0) {
+          console.log("✅ Debug endpoint returned data:", debugData.length, "rows")
+
+          // Convert to preview format
+          const headers = debugData[0]
+          const rows = debugData.slice(1)
+
+          const previewTabData: TabData = {
+            id: `preview-${Date.now()}`,
+            name: sheetName,
+            columns: headers.map((header, index) => ({
+              key: header.toLowerCase().replace(/[^a-z0-9]/g, "_"),
+              label: header,
+              type: "text" as const,
+              width: 150,
+            })),
+            rows: rows.slice(0, 5).map((row, index) => {
+              const rowData: any = { id: `preview-${index}` }
+              headers.forEach((header, colIndex) => {
+                const key = header.toLowerCase().replace(/[^a-z0-9]/g, "_")
+                rowData[key] = row[colIndex] || ""
+              })
+              return rowData
+            }),
+          }
+
+          setPreviewData(previewTabData)
+          setStep("preview")
+          return
+        }
+      } catch (debugError: any) {
+        console.error("Debug endpoint failed:", debugError.message)
+      }
+
+      // Fallback to original server action
+      console.log("Trying original server action...")
       const data = await getSheetDataAction(spreadsheetId, sheetName, accessToken)
 
+      console.log("Server action returned:", data?.length || 0, "rows")
+
       // Convert the server response back to preview format
-      if (data.length > 0) {
+      if (data && data.length > 0) {
         const headers = data[0]
         const rows = data.slice(1)
 
@@ -333,9 +421,36 @@ ${serverActionError.message}
 
         setPreviewData(previewTabData)
         setStep("preview")
+      } else {
+        throw new Error("Nenhum dado encontrado na aba selecionada")
       }
     } catch (error: any) {
+      console.error("Error loading sheet data:", error)
       toast.error(error.message || "Erro ao carregar dados da aba")
+
+      // Show debug results if available
+      if (debugResults) {
+        console.log("Debug results available:", debugResults)
+        setError(`
+❌ Erro ao carregar dados da aba "${sheetName}"
+
+${error.message}
+
+🔍 RESULTADOS DO DEBUG:
+${
+  debugResults.results
+    ?.map((r: any, i: number) => `${i + 1}. ${r.method}: ${r.success ? "✅" : "❌"} (${r.dataLength || 0} linhas)`)
+    .join("\n") || "Nenhum resultado disponível"
+}
+
+📊 RESUMO:
+- Métodos testados: ${debugResults.summary?.totalMethods || 0}
+- Métodos bem-sucedidos: ${debugResults.summary?.successfulMethods || 0}
+- Métodos com dados: ${debugResults.summary?.methodsWithData || 0}
+
+💡 DICA: Verifique se a aba "${sheetName}" contém dados e se você tem permissão para acessá-la.
+        `)
+      }
     }
   }
 
@@ -352,11 +467,25 @@ ${serverActionError.message}
         throw new Error("Token de acesso não encontrado")
       }
 
-      const data = await getSheetDataAction(spreadsheetId, selectedSheet, accessToken)
+      // Try debug endpoint first for full data
+      let data = null
+      try {
+        data = await debugSheetData(spreadsheetId, selectedSheet, accessToken)
+        console.log("Using debug endpoint data for import:", data?.length || 0, "rows")
+      } catch (debugError) {
+        console.log("Debug endpoint failed, using server action...")
+        data = await getSheetDataAction(spreadsheetId, selectedSheet, accessToken)
+        console.log("Using server action data for import:", data?.length || 0, "rows")
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error("Nenhum dado encontrado para importar")
+      }
+
       const result = await importGoogleSheetAction(selectedSheet, data)
 
       if (result.success) {
-        toast.success(`Aba "${selectedSheet}" importada com sucesso!`)
+        toast.success(`Aba "${selectedSheet}" importada com sucesso! ${data.length - 1} registros importados.`)
         setIsOpen(false)
         onImportComplete()
         resetState()
@@ -365,6 +494,7 @@ ${serverActionError.message}
         setStep("preview")
       }
     } catch (error: any) {
+      console.error("Import error:", error)
       toast.error(error.message || "Erro ao importar dados")
       setStep("preview")
     }
@@ -377,6 +507,7 @@ ${serverActionError.message}
     setSelectedSheet("")
     setPreviewData(null)
     setError(null)
+    setDebugResults(null)
     if (authTimeout) {
       clearTimeout(authTimeout)
       setAuthTimeout(null)
@@ -415,6 +546,33 @@ ${serverActionError.message}
                   <div>API Key: {debugInfo.hasApiKey ? "✅ Configurado" : "❌ Não configurado"}</div>
                   <div>Client ID Length: {debugInfo.clientIdLength || 0}</div>
                   <div>API Key Length: {debugInfo.apiKeyLength || 0}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Debug Results */}
+            {debugResults && (
+              <div className="text-xs bg-blue-50 p-3 rounded border border-blue-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Search className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-blue-800">Resultados do Debug</span>
+                </div>
+                <div className="space-y-1 text-blue-700">
+                  <div>Planilha: {debugResults.spreadsheetId}</div>
+                  <div>Aba: {debugResults.sheetName}</div>
+                  <div>Métodos testados: {debugResults.summary?.totalMethods || 0}</div>
+                  <div>Métodos com sucesso: {debugResults.summary?.successfulMethods || 0}</div>
+                  <div>Métodos com dados: {debugResults.summary?.methodsWithData || 0}</div>
+                  {debugResults.summary?.bestResult && (
+                    <div className="mt-2 p-2 bg-green-100 rounded">
+                      <div className="font-medium text-green-800">✅ Melhor resultado:</div>
+                      <div className="text-green-700">
+                        Método: {debugResults.summary.bestResult.method}
+                        <br />
+                        Linhas: {debugResults.summary.bestResult.dataLength}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
