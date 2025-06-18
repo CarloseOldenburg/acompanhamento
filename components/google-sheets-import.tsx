@@ -1,17 +1,12 @@
 "use client"
 
+import { DialogTrigger } from "@/components/ui/dialog"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -86,7 +81,21 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
 
       const result = await response.json()
       console.log("Sheet data debug result:", result)
-      setDebugResults(result)
+
+      // Log detailed results for debugging
+      if (result.success && result.results) {
+        console.log("=== DETAILED DEBUG RESULTS ===")
+        result.results.forEach((r: any, i: number) => {
+          console.log(`Method ${i + 1}: ${r.method}`)
+          console.log(`  Success: ${r.success}`)
+          console.log(`  Data length: ${r.dataLength || 0}`)
+          console.log(`  First row: ${JSON.stringify(r.firstRow?.slice(0, 3) || [])}`)
+          console.log(`  Second row: ${JSON.stringify(r.secondRow?.slice(0, 3) || [])}`)
+          if (r.error) console.log(`  Error: ${r.error}`)
+          console.log("---")
+        })
+        console.log("=== END DETAILED DEBUG RESULTS ===")
+      }
 
       if (result.success && result.summary?.bestResult) {
         const bestResult = result.summary.bestResult
@@ -472,6 +481,12 @@ ${
       try {
         data = await debugSheetData(spreadsheetId, selectedSheet, accessToken)
         console.log("Using debug endpoint data for import:", data?.length || 0, "rows")
+        console.log("Data preview:", {
+          totalRows: data.length,
+          headers: data[0],
+          firstDataRow: data[1],
+          sampleData: data.slice(0, 3),
+        })
       } catch (debugError) {
         console.log("Debug endpoint failed, using server action...")
         data = await getSheetDataAction(spreadsheetId, selectedSheet, accessToken)
