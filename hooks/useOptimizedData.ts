@@ -8,16 +8,8 @@ export function useOptimizedData() {
   const [tabs, setTabs] = useState<TabData[]>([])
   const [loading, setLoading] = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  const [mounted, setMounted] = useState(false)
-
-  // Ensure component is mounted before doing anything
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   const refreshData = useCallback(async () => {
-    if (!mounted) return
-
     try {
       setLoading(true)
       const data = await getTabsAction()
@@ -28,18 +20,16 @@ export function useOptimizedData() {
     } finally {
       setLoading(false)
     }
-  }, [mounted])
+  }, [])
 
   useEffect(() => {
-    if (!mounted) return
-
     refreshData()
 
     // Refresh data every 30 seconds (optimized interval)
     const interval = setInterval(refreshData, 30000)
 
     return () => clearInterval(interval)
-  }, [refreshData, mounted])
+  }, [refreshData])
 
   return {
     tabs,

@@ -56,7 +56,7 @@ export function GoogleSheetsImport({ onImportComplete }: GoogleSheetsImportProps
       return
     }
 
-    const spreadsheetId = extractSpreadsheetIdAction(spreadsheetUrl)
+    const spreadsheetId = await extractSpreadsheetIdAction(spreadsheetUrl)
     if (!spreadsheetId) {
       toast.error("URL inválida. Use uma URL do Google Sheets.")
       return
@@ -111,7 +111,8 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
     setSelectedSheet(sheetName)
 
     try {
-      const spreadsheetId = extractSpreadsheetIdAction(spreadsheetUrl)!
+      const spreadsheetId = await extractSpreadsheetIdAction(spreadsheetUrl)
+
       const accessToken = googleAuth.getAccessToken()
 
       if (!accessToken) {
@@ -158,7 +159,7 @@ Domínio atual: ${mounted ? window.location.origin : "Carregando..."}
     setStep("importing")
 
     try {
-      const spreadsheetId = extractSpreadsheetIdAction(spreadsheetUrl)!
+      const spreadsheetId = await extractSpreadsheetIdAction(spreadsheetUrl)
       const accessToken = googleAuth.getAccessToken()
 
       if (!accessToken) {

@@ -212,7 +212,7 @@ export async function importGoogleSheetAction(sheetName: string, data: string[][
   }
 }
 
-export function extractSpreadsheetIdAction(url: string) {
+export async function extractSpreadsheetIdAction(url: string) {
   return ServerGoogleSheetsIntegration.extractSpreadsheetId(url)
 }
 
