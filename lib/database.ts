@@ -41,13 +41,25 @@ export async function getTabs(): Promise<TabData[]> {
 
 export async function createTab(tab: Omit<TabData, "rows">) {
   try {
+    console.log("=== DATABASE createTab START ===")
+    console.log("Creating tab:", tab.id, tab.name)
+    console.log("Columns to insert:", tab.columns)
+    console.log("Columns JSON:", JSON.stringify(tab.columns))
+
     await sql`
       INSERT INTO tabs (id, name, columns)
       VALUES (${tab.id}, ${tab.name}, ${JSON.stringify(tab.columns)})
     `
+
+    console.log("✅ Tab inserted successfully into database")
+    console.log("=== DATABASE createTab END ===")
     return { success: true }
   } catch (error) {
+    console.error("=== DATABASE createTab ERROR ===")
     console.error("Error creating tab:", error)
+    console.error("Error message:", error.message)
+    console.error("Error stack:", error.stack)
+    console.error("=== DATABASE createTab ERROR END ===")
     return { success: false, error: error.message }
   }
 }

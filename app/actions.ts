@@ -9,10 +9,25 @@ export async function getTabsAction() {
 }
 
 export async function createTabAction(tab: Omit<TabData, "rows">) {
+  console.log("=== createTabAction START ===")
+  console.log("Tab data received:", tab)
+  console.log("Tab ID:", tab.id)
+  console.log("Tab name:", tab.name)
+  console.log("Columns count:", tab.columns.length)
+  console.log("Columns:", tab.columns)
+
   const result = await db.createTab(tab)
+
+  console.log("Database createTab result:", result)
+
   if (result.success) {
+    console.log("✅ Tab created successfully, calling revalidatePath")
     revalidatePath("/")
+  } else {
+    console.error("❌ Failed to create tab:", result.error)
   }
+
+  console.log("=== createTabAction END ===")
   return result
 }
 
