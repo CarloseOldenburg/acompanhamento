@@ -57,3 +57,98 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom grid background */
+.bg-grid-slate-100 {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(148 163 184 / 0.05)'%3e%3cpath d='m0 .5h32m-32 32v-32'/%3e%3c/svg%3e");
+}
+
+/* Enhanced tabs styling */
+[data-radix-tabs-list] {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  position: relative;
+}
+
+[data-radix-tabs-trigger] {
+  flex-shrink: 0 !important;
+  position: relative;
+  overflow: hidden;
+}
+
+[data-radix-tabs-trigger]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transition: left 0.5s;
+}
+
+[data-radix-tabs-trigger]:hover::before {
+  left: 100%;
+}
+
+/* Smooth scrolling for tabs */
+.tabs-container {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+}
+
+.tabs-container::-webkit-scrollbar {
+  height: 4px;
+}
+
+.tabs-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tabs-container::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 2px;
+}
+
+.tabs-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* Pulse animation for active tab indicator */
+@keyframes pulse-blue {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0);
+  }
+}
+
+[data-state="active"] .w-2.h-2.rounded-full {
+  animation: pulse-blue 2s infinite;
+}
+
+/* Smooth transitions */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow,
+    transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Glass effect for active tab */
+[data-state="active"] {
+  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Hover effects for buttons */
+.group:hover .group-hover\:scale-110 {
+  transform: scale(1.1);
+}
+
+.group:hover .group-hover\:rotate-90 {
+  transform: rotate(90deg);
+}

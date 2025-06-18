@@ -3,105 +3,31 @@
 import { useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { BarChart3 } from "lucide-react"
-import { SpreadsheetTable } from "../components/spreadsheet-table"
-import { Dashboard } from "../components/dashboard"
-import { useLocalStorage } from "../hooks/useLocalStorage"
-import type { TabData, DashboardData } from "../types"
+import { BarChart3, Settings, Share2 } from "lucide-react"
+import { OptimizedSpreadsheetTable } from "../components/optimized-spreadsheet-table"
+import { EnhancedDashboard } from "../components/enhanced-dashboard"
+import { HeroSection } from "../components/hero-section"
 import { TabManager } from "../components/tab-manager"
-
-const initialTabs: TabData[] = [
-  {
-    id: "testes-integracao",
-    name: "Testes de Integração",
-    columns: [
-      { key: "restaurante", label: "Nome do Restaurante", type: "text", width: 200 },
-      { key: "telefone", label: "Telefone do Cliente", type: "text", width: 150 },
-      { key: "solicitante", label: "Solicitante", type: "text", width: 150 },
-      { key: "merchantId", label: "Merchant ID Totem", type: "text", width: 180 },
-      { key: "integradora", label: "PDV / Integradora", type: "text", width: 150 },
-      { key: "observacao", label: "Observação", type: "text", width: 300 },
-      { key: "status", label: "Status", type: "select", options: ["Pendente", "Concluído", "Agendado"], width: 120 },
-      { key: "dataAgendamento", label: "Data de Agendamento", type: "datetime", width: 180 },
-    ],
-    rows: [
-      {
-        id: "1",
-        restaurante: "Pastéis Takeda",
-        telefone: "",
-        solicitante: "Larissa Oliveira",
-        merchantId: "e2178d0d-3008-4707-bbf0-ea21afa084d0",
-        integradora: "menu integrado",
-        observacao: "Pastel de Carne R$16,90 código 5783",
-        status: "Concluído",
-        dataAgendamento: "",
-      },
-    ],
-  },
-  {
-    id: "bobs",
-    name: "Bobs",
-    columns: [
-      { key: "dataHora", label: "Data/Hora", type: "datetime", width: 180 },
-      { key: "loja", label: "Loja", type: "text", width: 200 },
-      { key: "responsavel", label: "Responsável", type: "text", width: 150 },
-      { key: "versaoAtual", label: "Versão Atual", type: "text", width: 120 },
-      { key: "versaoDestino", label: "Versão Destino", type: "text", width: 120 },
-      {
-        key: "tipoMudanca",
-        label: "Tipo de Mudança",
-        type: "select",
-        options: ["Rollout", "Hotfix", "Migração"],
-        width: 150,
-      },
-      { key: "observacao", label: "Observação", type: "text", width: 300 },
-      {
-        key: "status",
-        label: "Status",
-        type: "select",
-        options: ["Pendente", "Em Andamento", "Concluído", "Cancelado"],
-        width: 120,
-      },
-    ],
-    rows: [],
-  },
-  {
-    id: "mania-churrasco",
-    name: "Mania de Churrasco",
-    columns: [
-      { key: "dataHora", label: "Data/Hora", type: "datetime", width: 180 },
-      { key: "unidade", label: "Unidade", type: "text", width: 200 },
-      { key: "cliente", label: "Cliente", type: "text", width: 150 },
-      {
-        key: "tipoAtivacao",
-        label: "Tipo de Ativação",
-        type: "select",
-        options: ["Novo Cliente", "Reativação", "Upgrade"],
-        width: 150,
-      },
-      { key: "plano", label: "Plano", type: "text", width: 120 },
-      { key: "observacao", label: "Observação", type: "text", width: 300 },
-      { key: "status", label: "Status", type: "select", options: ["Pendente", "Ativo", "Inativo"], width: 120 },
-      { key: "dataAtivacao", label: "Data de Ativação", type: "date", width: 150 },
-    ],
-    rows: [],
-  },
-]
+import { useOptimizedData } from "../hooks/useOptimizedData"
+import { LoadingSpinner } from "../components/loading-spinner"
+import type { DashboardData } from "../types"
+import Link from "next/link"
+import { toast } from "sonner"
 
 export default function AcompanhamentoApp() {
-  const [tabs, setTabs] = useLocalStorage<TabData[]>("acompanhamento-tabs", initialTabs)
-  const [activeTab, setActiveTab] = useState(tabs[0]?.id || "")
+  const { tabs, loading, refreshData } = useOptimizedData()
+  const [activeTab, setActiveTab] = useState("")
   const [showDashboard, setShowDashboard] = useState<string | null>(null)
 
-  const updateTabData = (updatedTab: TabData) => {
-    const updatedTabs = tabs.map((tab) => (tab.id === updatedTab.id ? updatedTab : tab))
-    setTabs(updatedTabs)
+  // Set active tab when tabs are loaded
+  if (!activeTab && tabs.length > 0) {
+    setActiveTab(tabs[0].id)
   }
 
-  const generateDashboardData = (tabData: TabData): DashboardData => {
+  const generateDashboardData = (tabData: any): DashboardData => {
     const statusCounts: { [key: string]: number } = {}
 
-    tabData.rows.forEach((row) => {
+    tabData.rows.forEach((row: any) => {
       const status = row.status || "Sem Status"
       statusCounts[status] = (statusCounts[status] || 0) + 1
     })
@@ -123,48 +49,131 @@ export default function AcompanhamentoApp() {
     setShowDashboard(null)
   }
 
+  const shareTab = (tabId: string) => {
+    const shareUrl = `${window.location.origin}/share/${tabId}`
+    navigator.clipboard.writeText(shareUrl)
+    toast.success("Link de compartilhamento copiado!")
+  }
+
+  if (loading && tabs.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50/30">
+        <div className="text-center space-y-4">
+          <LoadingSpinner size="lg" />
+          <p className="text-gray-600">Carregando dados do sistema...</p>
+        </div>
+      </div>
+    )
+  }
+
   if (showDashboard) {
     const tabData = tabs.find((tab) => tab.id === showDashboard)
     if (tabData) {
       const dashboardData = generateDashboardData(tabData)
-      return <Dashboard data={dashboardData} onBack={closeDashboard} />
+      return <EnhancedDashboard data={dashboardData} onBack={closeDashboard} />
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto p-6">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Sistema de Acompanhamento</h1>
-          <p className="text-gray-600">Gerencie seus processos de integração, rollouts e ativações</p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30">
+      {/* Hero Section */}
+      <HeroSection />
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <TabsList
-                className="grid w-fit"
-                style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
-              >
-                {tabs.map((tab) => (
-                  <TabsTrigger key={tab.id} value={tab.id} className="px-6">
-                    {tab.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+      {/* Main Content */}
+      <div className="container mx-auto p-6 space-y-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+                {/* Enhanced Tabs Design */}
+                <div className="flex-1 min-w-0">
+                  <div className="relative">
+                    <TabsList className="inline-flex h-14 items-center justify-start rounded-2xl bg-gradient-to-r from-slate-50 to-gray-50 p-2 text-muted-foreground shadow-inner border border-gray-200/60 w-full overflow-x-auto backdrop-blur-sm">
+                      <div className="flex items-center space-x-2 min-w-max">
+                        {tabs.map((tab, index) => (
+                          <TabsTrigger
+                            key={tab.id}
+                            value={tab.id}
+                            className="group relative inline-flex items-center justify-center whitespace-nowrap rounded-xl px-6 py-3 text-sm font-medium ring-offset-background transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:shadow-lg data-[state=active]:shadow-blue-500/10 data-[state=active]:border data-[state=active]:border-blue-200/50 hover:bg-white/70 hover:text-gray-700 hover:shadow-md transform hover:scale-[1.02] data-[state=active]:scale-[1.02]"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <div
+                                className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                                  tab.id === activeTab
+                                    ? "bg-blue-500 shadow-lg shadow-blue-500/50"
+                                    : "bg-gray-300 group-hover:bg-gray-400"
+                                }`}
+                              />
+                              <span className="relative font-semibold">
+                                {tab.name}
+                                {tab.rows.length > 0 && (
+                                  <span
+                                    className={`ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold rounded-full transition-all duration-300 ${
+                                      tab.id === activeTab
+                                        ? "bg-blue-100 text-blue-700"
+                                        : "bg-gray-200 text-gray-600 group-hover:bg-gray-300"
+                                    }`}
+                                  >
+                                    {tab.rows.length}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                            {tab.id === activeTab && (
+                              <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-1 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full shadow-lg"></div>
+                            )}
+                          </TabsTrigger>
+                        ))}
+                      </div>
+                    </TabsList>
 
-              <TabManager tabs={tabs} onUpdateTabs={setTabs} activeTab={activeTab} onSetActiveTab={setActiveTab} />
+                    {/* Gradient fade for overflow */}
+                    <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent pointer-events-none rounded-r-2xl"></div>
+                  </div>
+                </div>
+
+                <TabManager
+                  tabs={tabs}
+                  onUpdateTabs={() => refreshData()}
+                  activeTab={activeTab}
+                  onSetActiveTab={setActiveTab}
+                />
+              </div>
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <Button
+                  variant="outline"
+                  onClick={() => shareTab(activeTab)}
+                  disabled={!activeTab}
+                  className="shadow-sm hover:shadow-md transition-all duration-200 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 group"
+                >
+                  <Share2 className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                  Compartilhar
+                </Button>
+                <Link href="/admin">
+                  <Button
+                    variant="outline"
+                    className="shadow-sm hover:shadow-md transition-all duration-200 border-gray-200 hover:border-gray-300 group"
+                  >
+                    <Settings className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
+                    Admin
+                  </Button>
+                </Link>
+                <Button
+                  onClick={() => openDashboard(activeTab)}
+                  className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 group"
+                  disabled={!activeTab}
+                >
+                  <BarChart3 className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                  Ver Dashboard
+                </Button>
+              </div>
             </div>
-
-            <Button onClick={() => openDashboard(activeTab)} className="bg-blue-600 hover:bg-blue-700">
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Ver Dashboard
-            </Button>
           </div>
 
           {tabs.map((tab) => (
             <TabsContent key={tab.id} value={tab.id} className="space-y-6">
-              <SpreadsheetTable tabData={tab} onUpdateData={updateTabData} />
+              <OptimizedSpreadsheetTable tabData={tab} onRefresh={refreshData} />
             </TabsContent>
           ))}
         </Tabs>
