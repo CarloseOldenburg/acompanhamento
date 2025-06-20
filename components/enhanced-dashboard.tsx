@@ -38,13 +38,14 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     [data.statusCounts],
   )
 
-  // Calcular estatísticas das lojas - CORRIGIDO PARA CONTAR CORRETAMENTE
+  // Calcular estatísticas das lojas - CORRIGIDO COMPLETAMENTE
   const storeStats = useMemo(() => {
     console.log("=== CALCULANDO ESTATÍSTICAS DAS LOJAS ===")
     console.log("Total de registros recebidos:", data.recentActivity.length)
     console.log("Primeiros 3 registros:", data.recentActivity.slice(0, 3))
 
-    const stores = new Map<string, any>()
+    // Usar array simples para preservar todas as lojas
+    const storeArray: any[] = []
 
     data.recentActivity.forEach((row, index) => {
       // Tentar diferentes campos para o nome da loja
@@ -65,43 +66,39 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
 
       const status = row.status || "Sem Status"
 
-      console.log(`Processando loja: ${storeName}, totens: ${totalTotensStr} -> ${totalTotens}, status: ${status}`)
+      console.log(
+        `Processando loja ${index + 1}: ${storeName}, totens: ${totalTotensStr} -> ${totalTotens}, status: ${status}`,
+      )
 
-      // Usar Map para garantir unicidade
-      if (!stores.has(storeName)) {
-        stores.set(storeName, {
-          name: storeName,
-          totalTotens: totalTotens,
-          status: status,
-          count: 1,
-        })
-      } else {
-        // Se já existe, atualizar apenas o contador
-        const existing = stores.get(storeName)!
-        existing.count++
-        // Manter o maior valor de totens se houver múltiplos registros
-        if (totalTotens > existing.totalTotens) {
-          existing.totalTotens = totalTotens
-        }
-      }
+      // Adicionar cada loja como entrada separada (não agrupar)
+      storeArray.push({
+        name: storeName,
+        totalTotens: totalTotens,
+        status: status,
+        count: 1,
+        originalIndex: index,
+      })
     })
 
-    const storeArray = Array.from(stores.values()).sort((a, b) => b.totalTotens - a.totalTotens)
+    // Ordenar por total de totens (maior primeiro)
+    const sortedStores = storeArray.sort((a, b) => b.totalTotens - a.totalTotens)
 
-    console.log("Lojas processadas:", storeArray.length)
-    console.log("Primeiras 5 lojas:", storeArray.slice(0, 5))
+    console.log("Lojas processadas:", sortedStores.length)
+    console.log("Primeiras 5 lojas:", sortedStores.slice(0, 5))
     console.log(
       "Total de totens calculado:",
-      storeArray.reduce((sum, store) => sum + store.totalTotens, 0),
+      sortedStores.reduce((sum, store) => sum + store.totalTotens, 0),
     )
     console.log("=== FIM DO CÁLCULO ===")
 
-    return storeArray
+    return sortedStores
   }, [data.recentActivity])
 
-  // Total de totens calculado corretamente
+  // Total de totens calculado corretamente - SOMAR TODOS
   const totalTotens = useMemo(() => {
-    return storeStats.reduce((sum, store) => sum + store.totalTotens, 0)
+    const total = storeStats.reduce((sum, store) => sum + store.totalTotens, 0)
+    console.log("Total de totens final:", total)
+    return total
   }, [storeStats])
 
   // Função para calcular porcentagens que somam exatamente 100%

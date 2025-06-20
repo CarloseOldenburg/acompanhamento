@@ -303,6 +303,30 @@ Origem atual detectada: ${origin}
     }
   }
 
+  // Normalize store name to handle duplicates and inconsistencies
+  private normalizeStoreName(name: string): string {
+    if (!name) return ""
+
+    let normalized = name.trim()
+
+    // Remove trailing spaces
+    normalized = normalized.replace(/\s+$/, "")
+
+    // Handle SouthRock cases - add KM info if missing
+    if (normalized.includes("SouthRock") && !normalized.includes("KM")) {
+      // This is a fallback - in real scenario, you'd need to map these correctly
+      console.log(`⚠️ SouthRock entry without KM found: "${normalized}"`)
+    }
+
+    // Handle Americas duplicates - remove trailing space
+    if (normalized === "Mania de Churrasco Prime Americas ") {
+      normalized = "Mania de Churrasco Prime Americas"
+      console.log(`✅ Fixed Americas trailing space: "${normalized}"`)
+    }
+
+    return normalized
+  }
+
   // Convert Google Sheets data to TabData format
   convertToTabData(sheetName: string, data: string[][]): TabData {
     try {
@@ -379,7 +403,7 @@ Origem atual detectada: ${origin}
         return column
       })
 
-      // Create data rows - PRESERVAR ORDEM ORIGINAL E VALORES CORRETOS
+      // Create data rows - PRESERVAR ORDEM ORIGINAL E NORMALIZAR NOMES
       const tabRows = finalRows.map((row, index) => {
         const rowData: any = {
           id: `imported-${Date.now()}-${index}`,
@@ -389,14 +413,21 @@ Origem atual detectada: ${origin}
           const key = this.sanitizeKey(header)
           const cellValue = row[colIndex]
 
-          // IMPORTANTE: Preservar o valor original sem conversão desnecessária
+          // IMPORTANTE: Preservar o valor original mas normalizar nomes de lojas
           if (cellValue !== null && cellValue !== undefined) {
+            let processedValue = cellValue
+
+            // Se for a coluna de loja, normalizar o nome
+            if (key === "loja" || header.toLowerCase().includes("loja")) {
+              processedValue = this.normalizeStoreName(cellValue.toString())
+            }
+
             // Se for número, manter como número
-            if (typeof cellValue === "number") {
-              rowData[key] = cellValue
+            if (typeof processedValue === "number") {
+              rowData[key] = processedValue
             } else {
               // Se for string, verificar se é um número válido
-              const strValue = cellValue.toString().trim()
+              const strValue = processedValue.toString().trim()
               if (strValue !== "" && !isNaN(Number(strValue)) && strValue.match(/^\d+$/)) {
                 // É um número inteiro válido
                 rowData[key] = Number(strValue)

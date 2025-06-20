@@ -244,9 +244,11 @@ export default function AcompanhamentoApp() {
                       {/* Tab Name Editor */}
                       {currentTab && (
                         <div className="flex items-center space-x-2">
-                          <span className="text-sm text-gray-600">Aba:</span>
+                          <span className="text-sm text-gray-600 transition-all duration-300 hover:text-gray-800 hover:scale-105">
+                            Aba:
+                          </span>
                           {editingTabName === currentTab.id ? (
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-2 animate-in slide-in-from-left-2 duration-300">
                               <Input
                                 value={tempTabName}
                                 onChange={(e) => setTempTabName(e.target.value)}
@@ -258,21 +260,23 @@ export default function AcompanhamentoApp() {
                                     setEditingTabName(null)
                                   }
                                 }}
-                                className="h-8 w-48 text-sm"
+                                className="h-8 w-48 text-sm border-2 border-blue-300 focus:border-blue-500 transition-all duration-300 shadow-sm focus:shadow-md"
                                 autoFocus
                                 placeholder="Nome da aba"
                               />
                             </div>
                           ) : (
-                            <div className="flex items-center space-x-2">
-                              <span className="font-medium text-gray-900">"{currentTab.name}"</span>
+                            <div className="flex items-center space-x-2 group">
+                              <span className="font-medium text-gray-900 transition-all duration-300 group-hover:text-blue-700 group-hover:scale-105 animate-in fade-in-50 duration-500">
+                                "{currentTab.name}"
+                              </span>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={startEditTabName}
-                                className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-all duration-200 transform hover:scale-105 group"
+                                className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-all duration-300 transform hover:scale-110 group-hover:rotate-12 shadow-sm hover:shadow-md rounded-lg border border-transparent hover:border-blue-200"
                               >
-                                <Edit3 className="w-3 h-3 transition-transform group-hover:rotate-12 duration-200" />
+                                <Edit3 className="w-3 h-3 transition-all duration-300 group-hover:rotate-45 group-hover:scale-125" />
                               </Button>
                             </div>
                           )}
