@@ -52,7 +52,7 @@ export default function AcompanhamentoApp() {
       tabName: tabData.name,
       statusCounts,
       totalRecords: tabData.rows.length,
-      recentActivity: tabData.rows.slice(-10).reverse(),
+      recentActivity: tabData.rows.slice(-100).reverse(), // Pegar mais registros para o dashboard
     }
   }
 
@@ -163,18 +163,11 @@ export default function AcompanhamentoApp() {
                     </div>
                   </div>
 
-                  {/* Actions Row - Separated into two groups */}
+                  {/* Actions Row - Reorganized */}
                   <div className="flex flex-wrap justify-between gap-4">
                     {/* Left side actions */}
                     <div className="flex items-center gap-3 flex-wrap">
                       <GoogleSheetsImport onImportComplete={refreshData} />
-
-                      <TabManager
-                        tabs={tabs}
-                        onUpdateTabs={() => refreshData()}
-                        activeTab={activeTab}
-                        onSetActiveTab={setActiveTab}
-                      />
                     </div>
 
                     {/* Right side actions */}
@@ -183,7 +176,7 @@ export default function AcompanhamentoApp() {
                         variant="outline"
                         onClick={() => shareTab(activeTab)}
                         disabled={!activeTab}
-                        className="shadow-sm hover:shadow-md transition-all duration-200 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 group"
+                        className="shadow-sm hover:shadow-md transition-all duration-200 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 group h-9"
                       >
                         <Share2 className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
                         Compartilhar
@@ -191,7 +184,7 @@ export default function AcompanhamentoApp() {
                       <Link href="/admin">
                         <Button
                           variant="outline"
-                          className="shadow-sm hover:shadow-md transition-all duration-200 border-gray-200 hover:border-gray-300 group"
+                          className="shadow-sm hover:shadow-md transition-all duration-200 border-gray-200 hover:border-gray-300 group h-9"
                         >
                           <Settings className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
                           Admin
@@ -199,7 +192,7 @@ export default function AcompanhamentoApp() {
                       </Link>
                       <Button
                         onClick={() => openDashboard(activeTab)}
-                        className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 group"
+                        className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 group h-9"
                         disabled={!activeTab}
                       >
                         <BarChart3 className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
@@ -209,6 +202,14 @@ export default function AcompanhamentoApp() {
                   </div>
                 </div>
               </div>
+
+              {/* Tab Manager - Now separate */}
+              <TabManager
+                tabs={tabs}
+                onUpdateTabs={() => refreshData()}
+                activeTab={activeTab}
+                onSetActiveTab={setActiveTab}
+              />
 
               {tabs.map((tab) => (
                 <TabsContent key={tab.id} value={tab.id} className="space-y-6">

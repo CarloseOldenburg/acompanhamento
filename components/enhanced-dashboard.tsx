@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
-import { ArrowLeft, Download, TrendingUp, Users, Clock, CheckCircle } from "lucide-react"
+import { ArrowLeft, Download, TrendingUp, Users, Clock, CheckCircle, Store, Hash } from "lucide-react"
 import type { DashboardData } from "../types"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -37,6 +37,61 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
       })),
     [data.statusCounts],
   )
+
+  // Calcular estatísticas das lojas - CORRIGIDO
+  const storeStats = useMemo(() => {
+    console.log("=== CALCULANDO ESTATÍSTICAS DAS LOJAS ===")
+    console.log("Total de registros recebidos:", data.recentActivity.length)
+    console.log("Primeiros 3 registros:", data.recentActivity.slice(0, 3))
+
+    const stores = data.recentActivity.reduce(
+      (acc, row) => {
+        // Tentar diferentes campos para o nome da loja
+        const storeName =
+          row.loja || row.restaurante || row.cliente || row.nome || row.unidade || "Loja não identificada"
+
+        // Tentar diferentes campos para total de totens e converter para número
+        const totalTotensStr = row.total_totens || row.totens || row.total_de_totens || "0"
+        const totalTotens = Number.parseInt(totalTotensStr.toString()) || 0
+
+        const status = row.status || "Sem Status"
+
+        console.log(`Processando loja: ${storeName}, totens: ${totalTotensStr} -> ${totalTotens}, status: ${status}`)
+
+        if (!acc[storeName]) {
+          acc[storeName] = {
+            name: storeName,
+            totalTotens: totalTotens,
+            status: status,
+            count: 0,
+          }
+        } else {
+          // Se já existe, somar os totens (caso seja a mesma loja com múltiplos registros)
+          acc[storeName].totalTotens = Math.max(acc[storeName].totalTotens, totalTotens)
+        }
+        acc[storeName].count++
+        return acc
+      },
+      {} as Record<string, any>,
+    )
+
+    const storeArray = Object.values(stores).sort((a: any, b: any) => b.totalTotens - a.totalTotens)
+
+    console.log("Lojas processadas:", storeArray.length)
+    console.log("Primeiras 5 lojas:", storeArray.slice(0, 5))
+    console.log(
+      "Total de totens calculado:",
+      storeArray.reduce((sum: number, store: any) => sum + store.totalTotens, 0),
+    )
+    console.log("=== FIM DO CÁLCULO ===")
+
+    return storeArray
+  }, [data.recentActivity])
+
+  // Total de totens calculado corretamente
+  const totalTotens = useMemo(() => {
+    return storeStats.reduce((sum: number, store: any) => sum + store.totalTotens, 0)
+  }, [storeStats])
 
   // Função para calcular porcentagens que somam exatamente 100%
   const calculatePercentages = useMemo(() => {
@@ -109,15 +164,10 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     try {
       // Criar dados para exportação
       const exportData = data.recentActivity.map((row) => ({
-        "Carimbo de data/hora": row.timestamp || "",
-        "Nome do Restaurante": row.nome || row.restaurante || "",
-        "Telefone do Cliente": row.telefone || "",
-        Solicitante: row.solicitante || "",
-        "Merchant ID Totem": row.merchantId || "",
-        "PDV / Integradora": row.pdv || "",
-        Observação: row.observacao || "",
+        Loja: row.loja || row.restaurante || row.cliente || "",
+        "Total de Totens": row.total_totens || row.totens || "",
         Status: row.status || "",
-        "Data de Agendamento": row.dataAgendamento || "",
+        Observação: row.observacao || "",
       }))
 
       // Converter para CSV
@@ -195,7 +245,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-blue-100 text-sm font-medium">Total</p>
+                  <p className="text-blue-100 text-sm font-medium">Total de Registros</p>
                   <p className="text-3xl font-bold">{data.totalRecords}</p>
                 </div>
                 <div className="w-12 h-12 bg-blue-400/30 rounded-lg flex items-center justify-center">
@@ -205,8 +255,36 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
             </CardContent>
           </Card>
 
+          <Card className="shadow-lg border-0 bg-gradient-to-r from-green-500 to-green-600 text-white">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-green-100 text-sm font-medium">Total de Lojas</p>
+                  <p className="text-3xl font-bold">{storeStats.length}</p>
+                </div>
+                <div className="w-12 h-12 bg-green-400/30 rounded-lg flex items-center justify-center">
+                  <Store className="w-6 h-6" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg border-0 bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-purple-100 text-sm font-medium">Total de Totens</p>
+                  <p className="text-3xl font-bold">{totalTotens}</p>
+                </div>
+                <div className="w-12 h-12 bg-purple-400/30 rounded-lg flex items-center justify-center">
+                  <Hash className="w-6 h-6" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {Object.entries(data.statusCounts)
-            .slice(0, 3)
+            .slice(0, 1)
             .map(([status, count], index) => (
               <Card key={status} className="shadow-lg border-0 bg-white">
                 <CardContent className="p-6">
@@ -277,6 +355,54 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
             </CardContent>
           </Card>
         </div>
+
+        {/* Store Overview */}
+        <Card className="shadow-lg border-0">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-xl font-semibold text-gray-900">
+              Visão Geral das Lojas ({storeStats.length} lojas, {totalTotens} totens)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {storeStats.slice(0, 12).map((store: any, index: number) => (
+                <div
+                  key={index}
+                  className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={store.name}>
+                      {store.name}
+                    </h4>
+                    <div
+                      className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(store.status)}`}
+                    >
+                      {getStatusIcon(store.status)}
+                      <span>{store.status}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <div className="flex items-center space-x-1">
+                      <Hash className="w-4 h-4" />
+                      <span className="font-medium">{store.totalTotens} totens</span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Users className="w-4 h-4" />
+                      <span>{store.count} registro(s)</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {storeStats.length > 12 && (
+              <div className="mt-4 text-center">
+                <p className="text-sm text-gray-500">
+                  Mostrando 12 de {storeStats.length} lojas. Use a exportação para ver todos os dados.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
