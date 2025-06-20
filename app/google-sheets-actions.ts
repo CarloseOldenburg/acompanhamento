@@ -276,7 +276,7 @@ Origem atual detectada: ${origin}
             }
           }
         } catch (basicError: any) {
-          console.error("Basic API call also failed:", basicError.message)
+          console.log("Basic API call also failed:", basicError.message)
         }
       }
 
@@ -379,7 +379,7 @@ Origem atual detectada: ${origin}
         return column
       })
 
-      // Create data rows
+      // Create data rows - PRESERVAR VALORES ORIGINAIS
       const tabRows = finalRows.map((row, index) => {
         const rowData: any = {
           id: `imported-${Date.now()}-${index}`,
@@ -388,9 +388,28 @@ Origem atual detectada: ${origin}
         headers.forEach((header, colIndex) => {
           const key = this.sanitizeKey(header)
           const cellValue = row[colIndex]
-          // Convert null/undefined to empty string, but preserve other values
-          rowData[key] = cellValue !== null && cellValue !== undefined ? cellValue.toString() : ""
-          console.log(`Row ${index}, Column ${header} (${key}):`, cellValue, "->", rowData[key])
+
+          // IMPORTANTE: Preservar o valor original sem conversão desnecessária
+          if (cellValue !== null && cellValue !== undefined) {
+            // Se for número, manter como número
+            if (typeof cellValue === "number") {
+              rowData[key] = cellValue
+            } else {
+              // Se for string, verificar se é um número válido
+              const strValue = cellValue.toString().trim()
+              if (strValue !== "" && !isNaN(Number(strValue)) && strValue.match(/^\d+$/)) {
+                // É um número inteiro válido
+                rowData[key] = Number(strValue)
+              } else {
+                // Manter como string
+                rowData[key] = strValue
+              }
+            }
+          } else {
+            rowData[key] = ""
+          }
+
+          console.log(`Row ${index}, Column ${header} (${key}):`, cellValue, "->", rowData[key], typeof rowData[key])
         })
 
         console.log(`✅ Created row ${index}:`, rowData)

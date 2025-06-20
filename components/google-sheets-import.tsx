@@ -669,7 +669,12 @@ ${
               </div>
             )}
 
-            <Button onClick={handleUrlSubmit} className="w-full" disabled={!spreadsheetUrl.trim()}>
+            <Button
+              onClick={handleUrlSubmit}
+              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 transition-all duration-200 transform hover:scale-[1.02] shadow-lg hover:shadow-xl"
+              disabled={!spreadsheetUrl.trim()}
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
               Conectar Planilha
             </Button>
 
@@ -815,8 +820,11 @@ ${
               <Button variant="outline" onClick={() => setStep("sheets")} className="flex-1">
                 Voltar
               </Button>
-              <Button onClick={handleImport} className="flex-1">
-                <Download className="w-4 h-4 mr-2" />
+              <Button
+                onClick={handleImport}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl group"
+              >
+                <Download className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
                 Importar Dados
               </Button>
             </div>
@@ -843,7 +851,7 @@ ${
       <Button
         variant="outline"
         disabled
-        className="border-2 border-dashed border-gray-300 text-gray-400 cursor-not-allowed"
+        className="border-2 border-dashed border-gray-300 text-gray-400 cursor-not-allowed h-9 px-3"
         suppressHydrationWarning
       >
         <FileSpreadsheet className="w-4 h-4 mr-2" />
@@ -863,11 +871,11 @@ ${
       <DialogTrigger asChild>
         <Button
           variant="outline"
-          className="border-2 border-dashed border-green-300 hover:border-green-500 hover:bg-green-50 text-green-600 hover:text-green-700"
+          className="border-2 border-dashed border-green-300 hover:border-green-500 hover:bg-green-50 text-green-600 hover:text-green-700 h-9 px-3 transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md group"
           suppressHydrationWarning
         >
-          <FileSpreadsheet className="w-4 h-4 mr-2" />
-          Importar do Google Sheets
+          <FileSpreadsheet className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200" />
+          Google Sheets
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
