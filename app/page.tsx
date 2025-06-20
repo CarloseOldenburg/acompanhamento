@@ -16,7 +16,6 @@ import type { DashboardData } from "../types"
 import Link from "next/link"
 import { toast } from "sonner"
 import { GoogleSheetsImport } from "../components/google-sheets-import"
-import { CSVImport } from "../components/csv-import"
 import { updateTabAction, deleteTabAction } from "./actions"
 
 export default function AcompanhamentoApp() {
@@ -58,7 +57,7 @@ export default function AcompanhamentoApp() {
       tabName: tabData.name,
       statusCounts,
       totalRecords: tabData.rows.length,
-      recentActivity: tabData.rows.slice().reverse(), // Todos os registros para o dashboard
+      recentActivity: tabData.rows, // MANTER ORDEM ORIGINAL
     }
   }
 
@@ -271,9 +270,9 @@ export default function AcompanhamentoApp() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={startEditTabName}
-                                className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-all duration-200 transform hover:scale-105"
+                                className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 transition-all duration-200 transform hover:scale-105 group"
                               >
-                                <Edit3 className="w-3 h-3 transition-transform group-hover:rotate-12" />
+                                <Edit3 className="w-3 h-3 transition-transform group-hover:rotate-12 duration-200" />
                               </Button>
                             </div>
                           )}
@@ -282,9 +281,8 @@ export default function AcompanhamentoApp() {
                     </div>
 
                     <div className="flex items-center space-x-2">
-                      {/* Import Actions */}
+                      {/* Import Actions - REMOVIDO CSV IMPORT */}
                       <GoogleSheetsImport onImportComplete={refreshData} />
-                      <CSVImport onImportComplete={refreshData} />
 
                       {/* Tab Actions */}
                       {tabs.length > 1 && currentTab && (
@@ -292,7 +290,7 @@ export default function AcompanhamentoApp() {
                           variant="outline"
                           size="sm"
                           onClick={() => deleteTab(currentTab.id)}
-                          className="h-8 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200 transform hover:scale-105 shadow-sm hover:shadow-md"
+                          className="h-8 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200 transform hover:scale-105 shadow-sm hover:shadow-md group"
                         >
                           <Trash2 className="w-3 h-3 mr-1 transition-transform group-hover:scale-110" />
                           Excluir

@@ -38,50 +38,61 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     [data.statusCounts],
   )
 
-  // Calcular estatísticas das lojas - CORRIGIDO
+  // Calcular estatísticas das lojas - CORRIGIDO PARA CONTAR CORRETAMENTE
   const storeStats = useMemo(() => {
     console.log("=== CALCULANDO ESTATÍSTICAS DAS LOJAS ===")
     console.log("Total de registros recebidos:", data.recentActivity.length)
     console.log("Primeiros 3 registros:", data.recentActivity.slice(0, 3))
 
-    const stores = data.recentActivity.reduce(
-      (acc, row) => {
-        // Tentar diferentes campos para o nome da loja
-        const storeName =
-          row.loja || row.restaurante || row.cliente || row.nome || row.unidade || "Loja não identificada"
+    const stores = new Map<string, any>()
 
-        // Tentar diferentes campos para total de totens e converter para número
-        const totalTotensStr = row.total_totens || row.totens || row.total_de_totens || "0"
-        const totalTotens = Number.parseInt(totalTotensStr.toString()) || 0
+    data.recentActivity.forEach((row, index) => {
+      // Tentar diferentes campos para o nome da loja
+      const storeName = row.loja || row.restaurante || row.cliente || row.nome || row.unidade || `Loja ${index + 1}`
 
-        const status = row.status || "Sem Status"
+      // Tentar diferentes campos para total de totens e converter para número
+      const totalTotensStr = row.total_totens || row.totens || row.total_de_totens || "0"
+      let totalTotens = 0
 
-        console.log(`Processando loja: ${storeName}, totens: ${totalTotensStr} -> ${totalTotens}, status: ${status}`)
+      // Converter para número de forma mais robusta
+      if (typeof totalTotensStr === "number") {
+        totalTotens = totalTotensStr
+      } else {
+        const numStr = totalTotensStr.toString().trim()
+        const parsed = Number.parseInt(numStr, 10)
+        totalTotens = isNaN(parsed) ? 0 : parsed
+      }
 
-        if (!acc[storeName]) {
-          acc[storeName] = {
-            name: storeName,
-            totalTotens: totalTotens,
-            status: status,
-            count: 0,
-          }
-        } else {
-          // Se já existe, somar os totens (caso seja a mesma loja com múltiplos registros)
-          acc[storeName].totalTotens = Math.max(acc[storeName].totalTotens, totalTotens)
+      const status = row.status || "Sem Status"
+
+      console.log(`Processando loja: ${storeName}, totens: ${totalTotensStr} -> ${totalTotens}, status: ${status}`)
+
+      // Usar Map para garantir unicidade
+      if (!stores.has(storeName)) {
+        stores.set(storeName, {
+          name: storeName,
+          totalTotens: totalTotens,
+          status: status,
+          count: 1,
+        })
+      } else {
+        // Se já existe, atualizar apenas o contador
+        const existing = stores.get(storeName)!
+        existing.count++
+        // Manter o maior valor de totens se houver múltiplos registros
+        if (totalTotens > existing.totalTotens) {
+          existing.totalTotens = totalTotens
         }
-        acc[storeName].count++
-        return acc
-      },
-      {} as Record<string, any>,
-    )
+      }
+    })
 
-    const storeArray = Object.values(stores).sort((a: any, b: any) => b.totalTotens - a.totalTotens)
+    const storeArray = Array.from(stores.values()).sort((a, b) => b.totalTotens - a.totalTotens)
 
     console.log("Lojas processadas:", storeArray.length)
     console.log("Primeiras 5 lojas:", storeArray.slice(0, 5))
     console.log(
       "Total de totens calculado:",
-      storeArray.reduce((sum: number, store: any) => sum + store.totalTotens, 0),
+      storeArray.reduce((sum, store) => sum + store.totalTotens, 0),
     )
     console.log("=== FIM DO CÁLCULO ===")
 
@@ -90,7 +101,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
 
   // Total de totens calculado corretamente
   const totalTotens = useMemo(() => {
-    return storeStats.reduce((sum: number, store: any) => sum + store.totalTotens, 0)
+    return storeStats.reduce((sum, store) => sum + store.totalTotens, 0)
   }, [storeStats])
 
   // Função para calcular porcentagens que somam exatamente 100%
@@ -365,7 +376,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {storeStats.slice(0, 12).map((store: any, index: number) => (
+              {storeStats.slice(0, 12).map((store, index) => (
                 <div
                   key={index}
                   className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"

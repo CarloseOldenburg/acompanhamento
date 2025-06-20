@@ -17,7 +17,7 @@ export async function getTabs(): Promise<TabData[]> {
           SELECT id, data, created_at, updated_at 
           FROM tab_rows 
           WHERE tab_id = ${tab.id}
-          ORDER BY created_at DESC
+          ORDER BY created_at ASC
         `
 
         return {
@@ -80,7 +80,13 @@ export async function updateTab(tab: Omit<TabData, "rows">) {
 
 export async function deleteTab(tabId: string) {
   try {
+    // Primeiro deletar todas as linhas da aba
+    await sql`DELETE FROM tab_rows WHERE tab_id = ${tabId}`
+
+    // Depois deletar a aba
     await sql`DELETE FROM tabs WHERE id = ${tabId}`
+
+    console.log(`✅ Tab ${tabId} and all its rows deleted successfully`)
     return { success: true }
   } catch (error) {
     console.error("Error deleting tab:", error)

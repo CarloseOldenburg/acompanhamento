@@ -379,7 +379,7 @@ Origem atual detectada: ${origin}
         return column
       })
 
-      // Create data rows - PRESERVAR VALORES ORIGINAIS
+      // Create data rows - PRESERVAR ORDEM ORIGINAL E VALORES CORRETOS
       const tabRows = finalRows.map((row, index) => {
         const rowData: any = {
           id: `imported-${Date.now()}-${index}`,
@@ -420,7 +420,7 @@ Origem atual detectada: ${origin}
         id: `imported-${this.sanitizeKey(sheetName)}-${Date.now()}`,
         name: sheetName,
         columns,
-        rows: tabRows,
+        rows: tabRows, // MANTER ORDEM ORIGINAL - NÃO INVERTER
       }
 
       console.log("✅ TabData conversion completed successfully")
@@ -575,8 +575,8 @@ export async function importGoogleSheetAction(sheetName: string, data: string[][
       throw new Error(`Failed to create tab: ${tabResult.error}`)
     }
 
-    // Then create each row
-    console.log("🚀 Step 2: Creating rows...")
+    // Then create each row IN CORRECT ORDER
+    console.log("🚀 Step 2: Creating rows in correct order...")
     let successfulRows = 0
     let failedRows = 0
 
