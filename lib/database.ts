@@ -5,11 +5,23 @@ const sql = neon(process.env.DATABASE_URL!)
 
 export async function getTabs(): Promise<TabData[]> {
   try {
-    const tabs = await sql`
-      SELECT id, name, columns, created_at, updated_at 
-      FROM tabs 
-      ORDER BY created_at ASC
-    `
+    // First try to get tabs with dashboard_type column
+    let tabs
+    try {
+      tabs = await sql`
+        SELECT id, name, columns, dashboard_type, created_at, updated_at 
+        FROM tabs 
+        ORDER BY created_at ASC
+      `
+    } catch (error) {
+      // If dashboard_type column doesn't exist, fall back to basic query
+      console.log("dashboard_type column not found, using fallback query")
+      tabs = await sql`
+        SELECT id, name, columns, created_at, updated_at 
+        FROM tabs 
+        ORDER BY created_at ASC
+      `
+    }
 
     const tabsWithRows = await Promise.all(
       tabs.map(async (tab) => {
@@ -20,10 +32,18 @@ export async function getTabs(): Promise<TabData[]> {
           ORDER BY created_at ASC
         `
 
+        // Determine dashboard type based on name if column doesn't exist
+        const dashboardType =
+          tab.dashboard_type ||
+          (tab.name.toLowerCase().includes("teste") || tab.name.toLowerCase().includes("integra")
+            ? "testing"
+            : "rollout")
+
         return {
           id: tab.id,
           name: tab.name,
           columns: tab.columns,
+          dashboardType,
           rows: rows.map((row) => ({
             id: row.id,
             ...row.data,
@@ -44,12 +64,25 @@ export async function createTab(tab: Omit<TabData, "rows">) {
     console.log("=== DATABASE createTab START ===")
     console.log("Creating tab:", tab.id, tab.name)
     console.log("Columns to insert:", tab.columns)
-    console.log("Columns JSON:", JSON.stringify(tab.columns))
+    console.log("Dashboard type:", tab.dashboardType || "rollout")
 
-    await sql`
-      INSERT INTO tabs (id, name, columns)
-      VALUES (${tab.id}, ${tab.name}, ${JSON.stringify(tab.columns)})
-    `
+    // Try to insert with dashboard_type, fall back if column doesn't exist
+    try {
+      await sql`
+        INSERT INTO tabs (id, name, columns, dashboard_type)
+        VALUES (${tab.id}, ${tab.name}, ${JSON.stringify(tab.columns)}, ${tab.dashboardType || "rollout"})
+      `
+    } catch (error) {
+      if (error.message.includes("dashboard_type")) {
+        console.log("dashboard_type column not found, using fallback insert")
+        await sql`
+          INSERT INTO tabs (id, name, columns)
+          VALUES (${tab.id}, ${tab.name}, ${JSON.stringify(tab.columns)})
+        `
+      } else {
+        throw error
+      }
+    }
 
     console.log("✅ Tab inserted successfully into database")
     console.log("=== DATABASE createTab END ===")
@@ -64,13 +97,38 @@ export async function createTab(tab: Omit<TabData, "rows">) {
   }
 }
 
-export async function updateTab(tab: Omit<TabData, "rows">) {
+export async function updateTab(tab: Omit<TabData, "rows"> & { dashboardType?: "rollout" | "testing" }) {
   try {
-    await sql`
-      UPDATE tabs 
-      SET name = ${tab.name}, columns = ${JSON.stringify(tab.columns)}, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ${tab.id}
-    `
+    console.log("🔄 Database updateTab:", tab.id, "tipo:", tab.dashboardType)
+
+    // Try to update with dashboard_type, fall back if column doesn't exist
+    try {
+      await sql`
+        UPDATE tabs 
+        SET 
+          name = ${tab.name}, 
+          columns = ${JSON.stringify(tab.columns)},
+          dashboard_type = ${tab.dashboardType || "rollout"},
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${tab.id}
+      `
+    } catch (error) {
+      if (error.message.includes("dashboard_type")) {
+        console.log("dashboard_type column not found, using fallback update")
+        await sql`
+          UPDATE tabs 
+          SET 
+            name = ${tab.name}, 
+            columns = ${JSON.stringify(tab.columns)},
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${tab.id}
+        `
+      } else {
+        throw error
+      }
+    }
+
+    console.log("✅ Tab updated in database")
     return { success: true }
   } catch (error) {
     console.error("Error updating tab:", error)

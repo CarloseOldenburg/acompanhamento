@@ -1,405 +1,387 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Plus, Settings, Trash2, GripVertical, Edit3 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Edit2, Trash2, Plus, Check, X } from "lucide-react"
+import { GoogleSheetsImport } from "./google-sheets-import"
 import { toast } from "sonner"
-import type { TabData, Column } from "../types"
 import { createTabAction, updateTabAction, deleteTabAction } from "../app/actions"
+import type { TabData, Column } from "../types"
 
 interface TabManagerProps {
   tabs: TabData[]
   onUpdateTabs: () => void
   activeTab: string
   onSetActiveTab: (tabId: string) => void
+  showActions?: boolean // Para controlar se é admin ou página principal
 }
 
-export function TabManager({ tabs, onUpdateTabs, activeTab, onSetActiveTab }: TabManagerProps) {
-  const [showAddTab, setShowAddTab] = useState(false)
-  const [showEditTab, setShowEditTab] = useState<string | null>(null)
-  const [showEditTabName, setShowEditTabName] = useState(false)
+export function TabManager({ tabs, onUpdateTabs, activeTab, onSetActiveTab, showActions = false }: TabManagerProps) {
+  const [isCreatingTab, setIsCreatingTab] = useState(false)
   const [newTabName, setNewTabName] = useState("")
-  const [tempTabName, setTempTabName] = useState("")
-  const [editingColumns, setEditingColumns] = useState<Column[]>([])
-  const [isPending, startTransition] = useTransition()
+  const [editingTab, setEditingTab] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState("")
 
   const currentTab = tabs.find((t) => t.id === activeTab)
 
-  const addNewTab = () => {
-    if (newTabName.trim()) {
-      startTransition(async () => {
-        const newTab: Omit<TabData, "rows"> = {
-          id: `tab-${Date.now()}`,
-          name: newTabName.trim(),
-          columns: [
-            { key: "loja", label: "Loja", type: "text", width: 250 },
-            { key: "total_totens", label: "Total de Totens", type: "text", width: 150 },
-            {
-              key: "status",
-              label: "Status",
-              type: "select",
-              options: ["Pendente", "Em Andamento", "Concluído", "Cancelado"],
-              width: 150,
-            },
-            { key: "observacao", label: "Observação", type: "text", width: 300 },
-          ],
-        }
-
-        const result = await createTabAction(newTab)
-        if (result.success) {
-          toast.success("Nova aba criada com sucesso!")
-          setNewTabName("")
-          setShowAddTab(false)
-          onSetActiveTab(newTab.id)
-          onUpdateTabs()
-        } else {
-          toast.error("Erro ao criar nova aba")
-        }
-      })
+  const createNewTab = async () => {
+    if (!newTabName.trim()) {
+      toast.error("Digite um nome para a nova aba")
+      return
     }
-  }
 
-  const updateTabName = (newName: string) => {
-    if (newName.trim() && newName !== currentTab?.name && currentTab) {
-      startTransition(async () => {
-        const result = await updateTabAction({
-          id: currentTab.id,
-          name: newName.trim(),
-          columns: currentTab.columns,
-        })
-        if (result.success) {
-          toast.success("Nome da aba atualizado!")
-          onUpdateTabs()
-        } else {
-          toast.error("Erro ao atualizar nome da aba")
-        }
-      })
-    }
-    setShowEditTabName(false)
-  }
+    try {
+      const defaultColumns: Column[] = [
+        { key: "loja", label: "Loja", type: "text", width: 250 },
+        { key: "total_totens", label: "Total de Totens", type: "text", width: 150 },
+        {
+          key: "status",
+          label: "Status",
+          type: "select",
+          options: ["Pendente", "Em Andamento", "Concluído", "Cancelado"],
+          width: 150,
+        },
+        { key: "observacao", label: "Observação", type: "text", width: 300 },
+      ]
 
-  const deleteTab = (tabId: string) => {
-    if (tabs.length > 1) {
-      startTransition(async () => {
-        const result = await deleteTabAction(tabId)
-        if (result.success) {
-          toast.success("Aba removida com sucesso!")
-          if (activeTab === tabId) {
-            onSetActiveTab(tabs.filter((t) => t.id !== tabId)[0].id)
-          }
-          onUpdateTabs()
-        } else {
-          toast.error("Erro ao remover aba")
-        }
-      })
+      const newTab: TabData = {
+        id: `tab-${Date.now()}`,
+        name: newTabName.trim(),
+        columns: defaultColumns,
+        rows: [],
+        dashboardType: "rollout",
+      }
+
+      const result = await createTabAction(newTab)
+
+      if (result.success) {
+        toast.success("Nova aba criada com sucesso!")
+        setNewTabName("")
+        setIsCreatingTab(false)
+        onUpdateTabs()
+        onSetActiveTab(newTab.id)
+      } else {
+        toast.error("Erro ao criar nova aba")
+      }
+    } catch (error) {
+      console.error("Error creating tab:", error)
+      toast.error("Erro ao criar nova aba")
     }
   }
 
   const startEditTab = (tab: TabData) => {
-    setEditingColumns([...tab.columns])
-    setShowEditTab(tab.id)
+    setEditingTab(tab.id)
+    setEditingName(tab.name)
   }
 
-  const startEditTabName = () => {
-    if (currentTab) {
-      setTempTabName(currentTab.name)
-      setShowEditTabName(true)
-    }
-  }
+  const saveTabName = async (tabId: string) => {
+    const tab = tabs.find((t) => t.id === tabId)
+    if (!tab || !editingName.trim()) return
 
-  const saveTabEdit = () => {
-    if (showEditTab) {
-      startTransition(async () => {
-        const tab = tabs.find((t) => t.id === showEditTab)
-        if (tab) {
-          const updatedTab = { ...tab, columns: editingColumns }
-          const result = await updateTabAction(updatedTab)
-          if (result.success) {
-            toast.success("Colunas atualizadas com sucesso!")
-            setShowEditTab(null)
-            onUpdateTabs()
-          } else {
-            toast.error("Erro ao atualizar colunas")
-          }
-        }
+    try {
+      const result = await updateTabAction({
+        ...tab,
+        name: editingName.trim(),
       })
+
+      if (result.success) {
+        toast.success("Nome da aba atualizado!")
+        setEditingTab(null)
+        onUpdateTabs()
+      } else {
+        toast.error("Erro ao atualizar nome da aba")
+      }
+    } catch (error) {
+      toast.error("Erro ao atualizar nome da aba")
     }
   }
 
-  const addColumn = () => {
-    const newColumn: Column = {
-      key: `col-${Date.now()}`,
-      label: "Nova Coluna",
-      type: "text",
-      width: 150,
+  const cancelEdit = () => {
+    setEditingTab(null)
+    setEditingName("")
+  }
+
+  const deleteTab = async (tabId: string) => {
+    if (tabs.length <= 1) {
+      toast.error("Não é possível deletar a última aba")
+      return
     }
-    setEditingColumns([...editingColumns, newColumn])
-  }
 
-  const updateColumn = (index: number, field: keyof Column, value: any) => {
-    const updated = [...editingColumns]
-    updated[index] = { ...updated[index], [field]: value }
-    setEditingColumns(updated)
-  }
+    try {
+      const result = await deleteTabAction(tabId)
 
-  const removeColumn = (index: number) => {
-    if (editingColumns.length > 1) {
-      setEditingColumns(editingColumns.filter((_, i) => i !== index))
+      if (result.success) {
+        toast.success("Aba deletada com sucesso!")
+        if (activeTab === tabId) {
+          const remainingTabs = tabs.filter((t) => t.id !== tabId)
+          onSetActiveTab(remainingTabs[0].id)
+        }
+        onUpdateTabs()
+      } else {
+        toast.error("Erro ao deletar aba")
+      }
+    } catch (error) {
+      toast.error("Erro ao deletar aba")
     }
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Tab Name Editor */}
-      {currentTab && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <h3 className="text-lg font-semibold text-gray-900">Configurações da Aba</h3>
-              {showEditTabName ? (
-                <div className="flex items-center space-x-2">
-                  <Input
-                    value={tempTabName}
-                    onChange={(e) => setTempTabName(e.target.value)}
-                    onBlur={() => updateTabName(tempTabName)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        updateTabName(tempTabName)
-                      } else if (e.key === "Escape") {
-                        setShowEditTabName(false)
-                      }
-                    }}
-                    className="h-8 w-64 text-sm"
-                    autoFocus
-                    placeholder="Nome da aba"
-                  />
-                  <Button size="sm" variant="outline" onClick={() => setShowEditTabName(false)} className="h-8">
-                    Cancelar
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-gray-600">Nome atual:</span>
-                  <span className="font-medium text-gray-900">"{currentTab.name}"</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={startEditTabName}
-                    className="h-8 px-3 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200 hover:border-blue-300"
-                    disabled={isPending}
-                  >
-                    <Edit3 className="w-3 h-3 mr-1" />
-                    Editar Nome
-                  </Button>
-                </div>
-              )}
-            </div>
-            {tabs.length > 1 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => deleteTab(activeTab)}
-                className="h-8 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300"
-                disabled={isPending}
-              >
-                <Trash2 className="w-3 h-3 mr-1" />
-                Excluir Aba
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+  // Se não é para mostrar ações (página principal), só mostra a seção da aba atual
+  if (!showActions) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow duration-200">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Ações</h3>
           <div className="flex items-center space-x-3">
-            {/* Add New Tab Button */}
-            <Dialog open={showAddTab} onOpenChange={setShowAddTab}>
-              <DialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-2 border-dashed border-blue-300 hover:border-blue-500 hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-all duration-300 h-9 px-4 rounded-lg shadow-sm hover:shadow-md"
-                  disabled={isPending}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Nova Aba
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle className="text-xl font-semibold text-gray-900">Criar Nova Aba</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-6 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="tab-name" className="text-sm font-medium text-gray-700">
-                      Nome da Aba
-                    </Label>
-                    <Input
-                      id="tab-name"
-                      value={newTabName}
-                      onChange={(e) => setNewTabName(e.target.value)}
-                      placeholder="Ex: Novos Clientes, Projetos..."
-                      className="w-full"
-                      onKeyDown={(e) => e.key === "Enter" && addNewTab()}
-                    />
-                  </div>
-                  <div className="flex justify-end space-x-3 pt-4">
-                    <Button variant="outline" onClick={() => setShowAddTab(false)} disabled={isPending}>
-                      Cancelar
-                    </Button>
-                    <Button
-                      onClick={addNewTab}
-                      disabled={!newTabName.trim() || isPending}
-                      className="bg-blue-600 hover:bg-blue-700"
-                    >
-                      {isPending ? "Criando..." : "Criar Aba"}
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            {/* Edit Columns Button */}
+            <span className="text-sm text-gray-600">Aba:</span>
+            <span
+              className={`font-medium text-gray-900 transition-all duration-300 ${
+                editingTab === currentTab?.id ? "text-blue-600 scale-105" : "hover:text-blue-600"
+              }`}
+            >
+              "{currentTab?.name}"
+            </span>
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
-                if (currentTab) startEditTab(currentTab)
+                if (currentTab) {
+                  setEditingTab(currentTab.id)
+                  setEditingName(currentTab.name)
+                }
               }}
-              className="h-9 px-4 hover:bg-gray-50 border-gray-200 hover:border-gray-300 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
-              disabled={isPending || !currentTab}
+              className={`h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200 hover:border-blue-300 group transition-all duration-300 ${
+                editingTab === currentTab?.id ? "scale-110 bg-blue-50 border-blue-300 shadow-md" : "hover:scale-110"
+              }`}
             >
-              <Settings className="w-4 h-4 mr-2" />
-              Editar Colunas
+              <Edit2
+                className={`w-3 h-3 mr-1 transition-transform duration-300 ${
+                  editingTab === currentTab?.id ? "rotate-12 scale-125" : "group-hover:rotate-12"
+                }`}
+              />
+              <span className="group-hover:scale-105 transition-transform duration-200">Editar Nome</span>
+            </Button>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <GoogleSheetsImport onImportComplete={onUpdateTabs} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (currentTab) deleteTab(currentTab.id)
+              }}
+              className="h-7 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 hover:scale-110 hover:shadow-md transition-all duration-300 group"
+              disabled={tabs.length <= 1}
+            >
+              <Trash2 className="w-3 h-3 mr-1 group-hover:rotate-12 transition-transform duration-200" />
+              <span className="group-hover:scale-105 transition-transform duration-200">Excluir</span>
             </Button>
           </div>
         </div>
-      </div>
 
-      {/* Edit Tab Dialog */}
-      <Dialog open={!!showEditTab} onOpenChange={() => setShowEditTab(null)}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-semibold text-gray-900">
-              Editar Colunas - {tabs.find((t) => t.id === showEditTab)?.name}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div className="flex justify-between items-center">
-              <h4 className="font-medium text-gray-900">Configurar Colunas</h4>
-              <Button onClick={addColumn} size="sm" className="bg-green-600 hover:bg-green-700">
-                <Plus className="w-4 h-4 mr-2" />
-                Adicionar Coluna
+        {/* Modal de edição inline */}
+        {editingTab === currentTab?.id && (
+          <div className="mt-3 pt-3 border-t border-gray-200 animate-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center space-x-2">
+              <Input
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                className="h-8 flex-1 focus:scale-105 focus:shadow-lg transition-all duration-300 animate-pulse"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveTabName(currentTab.id)
+                  if (e.key === "Escape") cancelEdit()
+                }}
+                autoFocus
+                placeholder="Nome da aba"
+              />
+              <Button
+                size="sm"
+                onClick={() => saveTabName(currentTab.id)}
+                className="h-8 hover:scale-125 hover:shadow-lg transition-all duration-300 group bg-green-600 hover:bg-green-700"
+              >
+                <Check className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
               </Button>
-            </div>
-
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {editingColumns.map((column, index) => (
-                <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                  <div className="grid grid-cols-12 gap-4 items-end">
-                    <div className="col-span-1 flex justify-center">
-                      <GripVertical className="w-5 h-5 text-gray-400" />
-                    </div>
-
-                    <div className="col-span-3">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">Nome da Coluna</Label>
-                      <Input
-                        value={column.label}
-                        onChange={(e) => updateColumn(index, "label", e.target.value)}
-                        className="h-9"
-                        placeholder="Nome da coluna"
-                      />
-                    </div>
-
-                    <div className="col-span-2">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">Chave (ID)</Label>
-                      <Input
-                        value={column.key}
-                        onChange={(e) => updateColumn(index, "key", e.target.value.toLowerCase().replace(/\s+/g, "_"))}
-                        className="h-9"
-                        placeholder="chave_coluna"
-                      />
-                    </div>
-
-                    <div className="col-span-2">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">Tipo</Label>
-                      <Select value={column.type} onValueChange={(value) => updateColumn(index, "type", value)}>
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="text">Texto</SelectItem>
-                          <SelectItem value="select">Lista de Opções</SelectItem>
-                          <SelectItem value="date">Data</SelectItem>
-                          <SelectItem value="datetime">Data e Hora</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="col-span-2">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">Largura (px)</Label>
-                      <Input
-                        type="number"
-                        value={column.width || 150}
-                        onChange={(e) => updateColumn(index, "width", Number.parseInt(e.target.value))}
-                        className="h-9"
-                        min="100"
-                        max="500"
-                      />
-                    </div>
-
-                    <div className="col-span-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeColumn(index)}
-                        disabled={editingColumns.length <= 1}
-                        className="h-9 w-9 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-
-                    <div className="col-span-1">
-                      <span className="text-xs text-gray-500">#{index + 1}</span>
-                    </div>
-                  </div>
-
-                  {column.type === "select" && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">
-                        Opções (separadas por vírgula)
-                      </Label>
-                      <Input
-                        value={column.options?.join(", ") || ""}
-                        onChange={(e) => updateColumn(index, "options", e.target.value.split(", ").filter(Boolean))}
-                        placeholder="Opção 1, Opção 2, Opção 3"
-                        className="h-9"
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-              <Button variant="outline" onClick={() => setShowEditTab(null)} disabled={isPending}>
-                Cancelar
-              </Button>
-              <Button onClick={saveTabEdit} disabled={isPending} className="bg-blue-600 hover:bg-blue-700">
-                {isPending ? "Salvando..." : "Salvar Alterações"}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={cancelEdit}
+                className="h-8 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
+              >
+                <X className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
               </Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
+    )
+  }
+
+  // Versão completa para admin (showActions=true)
+  return (
+    <div className="space-y-8">
+      {/* Existing Tabs */}
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Abas Existentes</h3>
+          <Badge variant="secondary" className="text-sm hover:scale-105 transition-transform duration-200">
+            {tabs.length} {tabs.length === 1 ? "aba" : "abas"}
+          </Badge>
+        </div>
+
+        <div className="space-y-4">
+          {tabs.map((tab) => {
+            const isRollout = (tab.dashboardType || "rollout") === "rollout"
+
+            return (
+              <div
+                key={tab.id}
+                className="flex items-center justify-between py-2 hover:scale-[1.02] transition-transform duration-200"
+              >
+                <div className="flex items-center space-x-3">
+                  <div
+                    className={`w-3 h-3 rounded-full transition-all duration-300 ${isRollout ? "bg-green-500 shadow-lg shadow-green-500/50" : "bg-purple-500 shadow-lg shadow-purple-500/50"}`}
+                  />
+
+                  {editingTab === tab.id ? (
+                    <div className="flex items-center space-x-2 animate-in slide-in-from-left-2 duration-300">
+                      <Input
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        className="h-8 w-48 focus:scale-110 focus:shadow-lg transition-all duration-300 animate-pulse"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveTabName(tab.id)
+                          if (e.key === "Escape") cancelEdit()
+                        }}
+                        autoFocus
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => saveTabName(tab.id)}
+                        className="h-8 w-8 p-0 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
+                      >
+                        <Check className="w-4 h-4 text-green-600 group-hover:scale-110 transition-transform duration-200" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={cancelEdit}
+                        className="h-8 w-8 p-0 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
+                      >
+                        <X className="w-4 h-4 text-red-600 group-hover:rotate-90 transition-transform duration-200" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-3">
+                      <span className="font-medium text-gray-900 hover:text-blue-600 hover:scale-105 transition-all duration-200">
+                        {tab.name}
+                      </span>
+                      <Badge
+                        variant="default"
+                        className="bg-blue-600 text-white text-xs hover:scale-105 transition-transform duration-200"
+                      >
+                        {isRollout ? "Rollout de Sistema" : "Testes de Integração"}
+                      </Badge>
+                      <span className="text-sm text-gray-500">• {tab.rows.length} registros</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  {editingTab !== tab.id && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => startEditTab(tab)}
+                        className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
+                      >
+                        <Edit2 className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => deleteTab(tab.id)}
+                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
+                        disabled={tabs.length <= 1}
+                      >
+                        <Trash2 className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Create New Tab */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Criar Nova Aba</h3>
+
+        {isCreatingTab ? (
+          <div className="p-4 border-2 border-dashed border-blue-300 bg-blue-50/30 rounded-lg animate-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center space-x-3">
+              <Input
+                value={newTabName}
+                onChange={(e) => setNewTabName(e.target.value)}
+                placeholder="Nome da nova aba..."
+                className="flex-1 focus:scale-105 focus:shadow-lg transition-all duration-300 animate-pulse"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") createNewTab()
+                  if (e.key === "Escape") {
+                    setIsCreatingTab(false)
+                    setNewTabName("")
+                  }
+                }}
+                autoFocus
+              />
+              <Button
+                onClick={createNewTab}
+                size="sm"
+                className="hover:scale-110 hover:shadow-lg transition-all duration-300 group bg-green-600 hover:bg-green-700"
+              >
+                <Plus className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
+                Criar
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsCreatingTab(false)
+                  setNewTabName("")
+                }}
+                className="hover:scale-110 hover:shadow-lg transition-all duration-300 group"
+              >
+                <span className="group-hover:scale-105 transition-transform duration-200">Cancelar</span>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 hover:bg-blue-50/30 hover:scale-105 hover:shadow-lg transition-all duration-300 cursor-pointer group"
+            onClick={() => setIsCreatingTab(true)}
+          >
+            <Plus className="w-6 h-6 mx-auto mb-2 text-gray-400 group-hover:rotate-90 group-hover:scale-125 transition-all duration-300" />
+            <span className="text-gray-600 group-hover:text-blue-600 group-hover:scale-105 transition-all duration-200">
+              Criar Nova Aba
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Import Data */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Importar Dados</h3>
+        <div className="mb-3">
+          <GoogleSheetsImport onImportComplete={onUpdateTabs} />
+        </div>
+        <p className="text-sm text-gray-500">
+          Importe dados diretamente do Google Sheets para criar uma nova aba automaticamente.
+        </p>
+      </div>
     </div>
   )
 }

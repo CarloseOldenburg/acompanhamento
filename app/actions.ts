@@ -5,7 +5,22 @@ import * as db from "../lib/database"
 import type { TabData, TableRow } from "../types"
 
 export async function getTabsAction() {
-  return await db.getTabs()
+  try {
+    return await db.getTabs()
+  } catch (error) {
+    console.error("Error in getTabsAction:", error)
+    return []
+  }
+}
+
+export async function getTabsForAdminAction() {
+  try {
+    const tabs = await db.getTabs()
+    return { success: true, tabs }
+  } catch (error) {
+    console.error("Error in getTabsForAdminAction:", error)
+    return { success: false, tabs: [], error: error.message }
+  }
 }
 
 export async function createTabAction(tab: Omit<TabData, "rows">) {
@@ -23,6 +38,7 @@ export async function createTabAction(tab: Omit<TabData, "rows">) {
   if (result.success) {
     console.log("✅ Tab created successfully, calling revalidatePath")
     revalidatePath("/")
+    revalidatePath("/admin")
   } else {
     console.error("❌ Failed to create tab:", result.error)
   }
@@ -31,11 +47,19 @@ export async function createTabAction(tab: Omit<TabData, "rows">) {
   return result
 }
 
-export async function updateTabAction(tab: Omit<TabData, "rows">) {
+export async function updateTabAction(tab: Omit<TabData, "rows"> & { dashboardType?: "rollout" | "testing" }) {
+  console.log("🔄 updateTabAction:", tab.id, "tipo:", tab.dashboardType)
+
   const result = await db.updateTab(tab)
+
   if (result.success) {
+    console.log("✅ Tab updated successfully, revalidating paths")
     revalidatePath("/")
+    revalidatePath("/admin")
+  } else {
+    console.error("❌ Failed to update tab:", result.error)
   }
+
   return result
 }
 
@@ -43,6 +67,7 @@ export async function deleteTabAction(tabId: string) {
   const result = await db.deleteTab(tabId)
   if (result.success) {
     revalidatePath("/")
+    revalidatePath("/admin")
   }
   return result
 }
@@ -51,6 +76,7 @@ export async function createRowAction(tabId: string, rowData: TableRow) {
   const result = await db.createRow(tabId, rowData)
   if (result.success) {
     revalidatePath("/")
+    revalidatePath("/admin")
   }
   return result
 }
@@ -59,6 +85,7 @@ export async function updateRowAction(tabId: string, rowData: TableRow) {
   const result = await db.updateRow(tabId, rowData)
   if (result.success) {
     revalidatePath("/")
+    revalidatePath("/admin")
   }
   return result
 }
@@ -67,6 +94,7 @@ export async function deleteRowAction(rowId: string) {
   const result = await db.deleteRow(rowId)
   if (result.success) {
     revalidatePath("/")
+    revalidatePath("/admin")
   }
   return result
 }

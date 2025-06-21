@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
-import { ArrowLeft, Download, TrendingUp, Users, Clock, CheckCircle, Store, Hash } from "lucide-react"
+import { ArrowLeft, Download, TrendingUp, Clock, CheckCircle, Store, TestTube, Zap, AlertCircle } from "lucide-react"
 import type { DashboardData } from "../types"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -18,6 +18,9 @@ const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
 
 export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
   const [selectedPeriod, setSelectedPeriod] = useState("todos")
+
+  // Determinar tipo de dashboard baseado na aba
+  const dashboardType = data.dashboardType || "rollout"
 
   const chartData = useMemo(
     () =>
@@ -38,117 +41,145 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     [data.statusCounts],
   )
 
-  // Calcular estatísticas das lojas - CORRIGIDO COMPLETAMENTE
-  const storeStats = useMemo(() => {
-    console.log("=== CALCULANDO ESTATÍSTICAS DAS LOJAS ===")
-    console.log("Total de registros recebidos:", data.recentActivity.length)
-    console.log("Primeiros 3 registros:", data.recentActivity.slice(0, 3))
+  // Estatísticas para Rollout
+  const rolloutStats = useMemo(() => {
+    if (dashboardType !== "rollout") return { stores: [], statusGroups: {} }
 
-    // Usar array simples para preservar todas as lojas
+    console.log("=== CALCULANDO ESTATÍSTICAS DO ROLLOUT ===")
     const storeArray: any[] = []
 
     data.recentActivity.forEach((row, index) => {
-      // Tentar diferentes campos para o nome da loja
       const storeName = row.loja || row.restaurante || row.cliente || row.nome || row.unidade || `Loja ${index + 1}`
-
-      // Tentar diferentes campos para total de totens e converter para número
-      const totalTotensStr = row.total_totens || row.totens || row.total_de_totens || "0"
-      let totalTotens = 0
-
-      // Converter para número de forma mais robusta
-      if (typeof totalTotensStr === "number") {
-        totalTotens = totalTotensStr
-      } else {
-        const numStr = totalTotensStr.toString().trim()
-        const parsed = Number.parseInt(numStr, 10)
-        totalTotens = isNaN(parsed) ? 0 : parsed
-      }
-
       const status = row.status || "Sem Status"
 
-      console.log(
-        `Processando loja ${index + 1}: ${storeName}, totens: ${totalTotensStr} -> ${totalTotens}, status: ${status}`,
-      )
-
-      // Adicionar cada loja como entrada separada (não agrupar)
       storeArray.push({
         name: storeName,
-        totalTotens: totalTotens,
         status: status,
-        count: 1,
         originalIndex: index,
       })
     })
 
-    // Ordenar por total de totens (maior primeiro)
-    const sortedStores = storeArray.sort((a, b) => b.totalTotens - a.totalTotens)
-
-    console.log("Lojas processadas:", sortedStores.length)
-    console.log("Primeiras 5 lojas:", sortedStores.slice(0, 5))
-    console.log(
-      "Total de totens calculado:",
-      sortedStores.reduce((sum, store) => sum + store.totalTotens, 0),
+    const statusGroups = storeArray.reduce(
+      (acc, store) => {
+        if (!acc[store.status]) {
+          acc[store.status] = []
+        }
+        acc[store.status].push(store)
+        return acc
+      },
+      {} as { [key: string]: any[] },
     )
-    console.log("=== FIM DO CÁLCULO ===")
 
-    return sortedStores
-  }, [data.recentActivity])
+    console.log("=== FIM DO CÁLCULO ROLLOUT ===")
+    return { stores: storeArray, statusGroups }
+  }, [data.recentActivity, dashboardType])
 
-  // Total de totens calculado corretamente - SOMAR TODOS
-  const totalTotens = useMemo(() => {
-    const total = storeStats.reduce((sum, store) => sum + store.totalTotens, 0)
-    console.log("Total de totens final:", total)
-    return total
-  }, [storeStats])
+  // Estatísticas para Testes de Integração - CORRIGIDO
+  const testingStats = useMemo(() => {
+    if (dashboardType !== "testing") return { tests: [], statusGroups: {} }
 
-  // Função para calcular porcentagens que somam exatamente 100%
-  const calculatePercentages = useMemo(() => {
-    const statusEntries = Object.entries(data.statusCounts)
-    const total = data.totalRecords
+    console.log("=== CALCULANDO ESTATÍSTICAS DE TESTES ===")
+    const testArray: any[] = []
 
-    if (total === 0) return {}
+    data.recentActivity.forEach((row, index) => {
+      // CORRIGIR: Buscar nome real do PDV/teste
+      const testName =
+        row.pdv ||
+        row.terminal ||
+        row.equipamento ||
+        row.nome_pdv ||
+        row.nome_teste ||
+        row.teste ||
+        row.loja || // Fallback para loja se for o nome do PDV
+        `PDV ${index + 1}`
 
-    // Calcular porcentagens brutas
-    const rawPercentages = statusEntries.map(([status, count]) => ({
-      status,
-      count,
-      rawPercent: (count / total) * 100,
-    }))
+      const status = row.status || "Sem Status"
+      const testType = row.tipo_teste || row.categoria || row.tipo || "PDV"
 
-    // Arredondar e ajustar para somar 100%
-    const percentages: { [key: string]: number } = {}
-    let totalRounded = 0
-
-    // Primeiro, arredondar normalmente
-    rawPercentages.forEach(({ status, rawPercent }) => {
-      const rounded = Math.round(rawPercent * 10) / 10 // Uma casa decimal
-      percentages[status] = rounded
-      totalRounded += rounded
+      testArray.push({
+        name: testName,
+        status: status,
+        type: testType,
+        originalIndex: index,
+      })
     })
 
-    // Ajustar se não somar 100%
-    const difference = 100 - totalRounded
-    if (Math.abs(difference) > 0.01) {
-      // Encontrar o status com maior contagem para ajustar
-      const maxStatus = rawPercentages.reduce((max, current) => (current.count > max.count ? current : max)).status
+    const statusGroups = testArray.reduce(
+      (acc, test) => {
+        if (!acc[test.status]) {
+          acc[test.status] = []
+        }
+        acc[test.status].push(test)
+        return acc
+      },
+      {} as { [key: string]: any[] },
+    )
 
-      percentages[maxStatus] = Math.round((percentages[maxStatus] + difference) * 10) / 10
+    console.log("Testes processados:", testArray.length)
+    console.log("Primeiros 3 testes:", testArray.slice(0, 3))
+    console.log("=== FIM DO CÁLCULO TESTES ===")
+    return { tests: testArray, statusGroups }
+  }, [data.recentActivity, dashboardType])
+
+  // Calcular progresso baseado no tipo - AJUSTADO PARA TESTES
+  const progress = useMemo(() => {
+    const isRollout = dashboardType === "rollout"
+    const items = isRollout ? rolloutStats.stores : testingStats.tests
+    const statusGroups = isRollout ? rolloutStats.statusGroups : testingStats.statusGroups
+
+    const total = items.length
+    const completed =
+      statusGroups["Concluído"]?.length ||
+      statusGroups["Concluido"]?.length ||
+      statusGroups["Aprovado"]?.length ||
+      statusGroups["Passou"]?.length ||
+      0
+    const inProgress =
+      statusGroups["Em Andamento"]?.length ||
+      statusGroups["Executando"]?.length ||
+      statusGroups["Testando"]?.length ||
+      statusGroups["Agendado"]?.length ||
+      0
+    const pending =
+      statusGroups["Pendente"]?.length || statusGroups["Aguardando"]?.length || statusGroups["Não Testado"]?.length || 0
+    const failed =
+      statusGroups["Falhou"]?.length || statusGroups["Reprovado"]?.length || statusGroups["Erro"]?.length || 0
+
+    const successPercentage = total > 0 ? Math.round((completed / total) * 100) : 0
+    const remainingPercentage = 100 - successPercentage
+
+    return {
+      total,
+      completed,
+      inProgress,
+      pending,
+      failed,
+      successPercentage,
+      remainingPercentage,
     }
-
-    return percentages
-  }, [data.statusCounts, data.totalRecords])
+  }, [rolloutStats, testingStats, dashboardType])
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "concluído":
       case "concluido":
+      case "aprovado":
+      case "passou":
         return "text-green-600 bg-green-100"
       case "pendente":
+      case "aguardando":
+      case "não testado":
         return "text-yellow-600 bg-yellow-100"
       case "agendado":
+      case "executando":
+      case "testando":
         return "text-blue-600 bg-blue-100"
       case "em andamento":
         return "text-purple-600 bg-purple-100"
+      case "falhou":
+      case "reprovado":
+      case "erro":
+        return "text-red-600 bg-red-100"
       default:
         return "text-gray-600 bg-gray-100"
     }
@@ -158,11 +189,21 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     switch (status.toLowerCase()) {
       case "concluído":
       case "concluido":
+      case "aprovado":
+      case "passou":
         return <CheckCircle className="w-4 h-4" />
       case "pendente":
+      case "aguardando":
+      case "não testado":
         return <Clock className="w-4 h-4" />
       case "agendado":
-        return <Users className="w-4 h-4" />
+      case "executando":
+      case "testando":
+        return <Zap className="w-4 h-4" />
+      case "falhou":
+      case "reprovado":
+      case "erro":
+        return <AlertCircle className="w-4 h-4 text-red-500" />
       default:
         return <TrendingUp className="w-4 h-4" />
     }
@@ -170,15 +211,28 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
 
   const handleExport = () => {
     try {
-      // Criar dados para exportação
-      const exportData = data.recentActivity.map((row) => ({
-        Loja: row.loja || row.restaurante || row.cliente || "",
-        "Total de Totens": row.total_totens || row.totens || "",
-        Status: row.status || "",
-        Observação: row.observacao || "",
-      }))
+      const isRollout = dashboardType === "rollout"
+      const exportData = data.recentActivity.map((row) => {
+        if (isRollout) {
+          return {
+            Loja: row.loja || row.restaurante || row.cliente || "",
+            Status: row.status || "",
+            "Sistema Atual": row.status === "Concluído" || row.status === "Concluido" ? "Novo" : "Antigo",
+            Observação: row.observacao || "",
+            "Data de Atualização": row.dataAgendamento || row.data || "",
+          }
+        } else {
+          return {
+            PDV: row.pdv || row.terminal || row.equipamento || row.nome_pdv || row.loja || "",
+            Status: row.status || "",
+            Tipo: row.tipo_teste || row.categoria || row.tipo || "PDV",
+            Resultado: row.resultado || "",
+            Observação: row.observacao || "",
+            "Data do Teste": row.dataAgendamento || row.data || "",
+          }
+        }
+      })
 
-      // Converter para CSV
       const headers = Object.keys(exportData[0] || {})
       const csvContent = [
         headers.join(","),
@@ -189,18 +243,20 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
         ),
       ].join("\n")
 
-      // Download do arquivo
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
       const link = document.createElement("a")
       const url = URL.createObjectURL(blob)
       link.setAttribute("href", url)
-      link.setAttribute("download", `${data.tabName}_${new Date().toISOString().split("T")[0]}.csv`)
+      link.setAttribute(
+        "download",
+        `${isRollout ? "rollout" : "testes"}_${data.tabName}_${new Date().toISOString().split("T")[0]}.csv`,
+      )
       link.style.visibility = "hidden"
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
 
-      toast.success("Dados exportados com sucesso!")
+      toast.success(`Dados ${isRollout ? "do rollout" : "dos testes"} exportados com sucesso!`)
     } catch (error) {
       toast.error("Erro ao exportar dados")
       console.error("Export error:", error)
@@ -210,8 +266,10 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
   const handlePeriodChange = (value: string) => {
     setSelectedPeriod(value)
     toast.info(`Filtro alterado para: ${value === "todos" ? "Todos os períodos" : value}`)
-    // Aqui você pode implementar a lógica de filtro real
   }
+
+  const isRollout = dashboardType === "rollout"
+  const currentItems = isRollout ? rolloutStats.stores : testingStats.tests
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30">
@@ -248,30 +306,19 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="shadow-lg border-0 bg-gradient-to-r from-blue-500 to-blue-600 text-white">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-blue-100 text-sm font-medium">Total de Registros</p>
-                  <p className="text-3xl font-bold">{data.totalRecords}</p>
-                </div>
-                <div className="w-12 h-12 bg-blue-400/30 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="w-6 h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card className="shadow-lg border-0 bg-gradient-to-r from-green-500 to-green-600 text-white">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-green-100 text-sm font-medium">Total de Lojas</p>
-                  <p className="text-3xl font-bold">{storeStats.length}</p>
+                  <p className="text-green-100 text-sm font-medium">
+                    {isRollout ? "Total de Lojas" : "Total de Testes"}
+                  </p>
+                  <p className="text-3xl font-bold">{currentItems.length}</p>
+                  {!isRollout && <p className="text-green-200 text-xs mt-1">Testes contínuos</p>}
                 </div>
                 <div className="w-12 h-12 bg-green-400/30 rounded-lg flex items-center justify-center">
-                  <Store className="w-6 h-6" />
+                  {isRollout ? <Store className="w-6 h-6" /> : <TestTube className="w-6 h-6" />}
                 </div>
               </div>
             </CardContent>
@@ -281,11 +328,18 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-purple-100 text-sm font-medium">Total de Totens</p>
-                  <p className="text-3xl font-bold">{totalTotens}</p>
+                  <p className="text-purple-100 text-sm font-medium">
+                    {isRollout ? "Progresso do Rollout" : "Taxa de Sucesso"}
+                  </p>
+                  <p className="text-3xl font-bold">{progress.successPercentage}%</p>
+                  <p className="text-purple-200 text-xs mt-1">
+                    {isRollout
+                      ? `${progress.completed} de ${progress.total} lojas`
+                      : `${progress.remainingPercentage}% restante para 100%`}
+                  </p>
                 </div>
                 <div className="w-12 h-12 bg-purple-400/30 rounded-lg flex items-center justify-center">
-                  <Hash className="w-6 h-6" />
+                  <TrendingUp className="w-6 h-6" />
                 </div>
               </div>
             </CardContent>
@@ -300,7 +354,9 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
                     <div>
                       <p className="text-gray-600 text-sm font-medium">{status}</p>
                       <p className="text-2xl font-bold text-gray-900">{count}</p>
-                      <p className="text-xs text-gray-500 mt-1">{calculatePercentages[status]?.toFixed(1)}% do total</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {((count / data.totalRecords) * 100).toFixed(1)}% do total
+                      </p>
                     </div>
                     <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${getStatusColor(status)}`}>
                       {getStatusIcon(status)}
@@ -364,48 +420,92 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
           </Card>
         </div>
 
-        {/* Store Overview */}
+        {/* Overview Section */}
         <Card className="shadow-lg border-0">
           <CardHeader className="pb-4">
             <CardTitle className="text-xl font-semibold text-gray-900">
-              Visão Geral das Lojas ({storeStats.length} lojas, {totalTotens} totens)
+              {isRollout
+                ? `Progresso do Rollout (${currentItems.length} lojas)`
+                : `Resultados dos Testes (${currentItems.length} testes)`}
             </CardTitle>
+            <div className="flex items-center space-x-4 text-sm text-gray-600">
+              <span className="flex items-center space-x-1">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <span>
+                  {progress.completed} {isRollout ? "Concluídas" : "Aprovados"}
+                </span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <Zap className="w-4 h-4 text-blue-600" />
+                <span>
+                  {progress.inProgress} {isRollout ? "Em Andamento" : "Executando"}
+                </span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <Clock className="w-4 h-4 text-yellow-600" />
+                <span>
+                  {progress.pending} {isRollout ? "Pendentes" : "Aguardando"}
+                </span>
+              </span>
+              {!isRollout && progress.failed > 0 && (
+                <span className="flex items-center space-x-1">
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                  <span>{progress.failed} Falharam</span>
+                </span>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
+            {/* Barra de Progresso */}
+            <div className="mb-6">
+              <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <span>{isRollout ? "Progresso Geral" : "Taxa de Sucesso"}</span>
+                <span>{progress.successPercentage}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3">
+                <div
+                  className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-500"
+                  style={{ width: `${progress.successPercentage}%` }}
+                ></div>
+              </div>
+              {!isRollout && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Faltam {progress.remainingPercentage}% para 100% de aprovação
+                </div>
+              )}
+            </div>
+
+            {/* Lista de Items */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {storeStats.slice(0, 12).map((store, index) => (
+              {currentItems.slice(0, 12).map((item, index) => (
                 <div
                   key={index}
                   className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={store.name}>
-                      {store.name}
+                    <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={item.name}>
+                      {item.name}
                     </h4>
                     <div
-                      className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(store.status)}`}
+                      className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(item.status)}`}
                     >
-                      {getStatusIcon(store.status)}
-                      <span>{store.status}</span>
+                      {getStatusIcon(item.status)}
+                      <span>{item.status}</span>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <div className="flex items-center space-x-1">
-                      <Hash className="w-4 h-4" />
-                      <span className="font-medium">{store.totalTotens} totens</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Users className="w-4 h-4" />
-                      <span>{store.count} registro(s)</span>
-                    </div>
+                  <div className="text-xs text-gray-500">
+                    {isRollout
+                      ? `Sistema: ${item.status === "Concluído" || item.status === "Concluido" ? "Novo" : "Antigo"}`
+                      : `Tipo: ${item.type || "PDV"}`}
                   </div>
                 </div>
               ))}
             </div>
-            {storeStats.length > 12 && (
+            {currentItems.length > 12 && (
               <div className="mt-4 text-center">
                 <p className="text-sm text-gray-500">
-                  Mostrando 12 de {storeStats.length} lojas. Use a exportação para ver todos os dados.
+                  Mostrando 12 de {currentItems.length} {isRollout ? "lojas" : "testes"}. Use a exportação para ver
+                  todos os dados.
                 </p>
               </div>
             )}

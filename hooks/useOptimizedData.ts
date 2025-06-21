@@ -13,10 +13,19 @@ export function useOptimizedData() {
     try {
       setLoading(true)
       const data = await getTabsAction()
-      setTabs(data)
+
+      // Garantir que data é um array
+      if (Array.isArray(data)) {
+        setTabs(data)
+      } else {
+        console.error("getTabsAction did not return an array:", data)
+        setTabs([])
+      }
+
       setLastUpdate(new Date())
     } catch (error) {
       console.error("Error fetching data:", error)
+      setTabs([])
     } finally {
       setLoading(false)
     }
