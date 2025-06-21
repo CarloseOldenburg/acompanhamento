@@ -32,28 +32,70 @@ export default function SharedDashboard() {
   const [loading, setLoading] = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
   const [selectedPeriod, setSelectedPeriod] = useState("todos")
+  const [debugInfo, setDebugInfo] = useState<any>(null)
 
   const fetchData = async () => {
     try {
       setLoading(true)
+      console.log("🔍 Buscando tab com ID:", tabId)
+
       const result = await getTabsAction()
+      console.log("📊 Resultado da busca:", result)
+
       if (result.success && result.tabs) {
-        const tab = result.tabs.find((t) => t.id === tabId)
+        console.log(
+          "📋 Tabs disponíveis:",
+          result.tabs.map((t) => ({ id: t.id, name: t.name })),
+        )
+
+        // Busca mais robusta - tenta diferentes formas de encontrar a tab
+        let tab = result.tabs.find((t) => t.id === tabId)
+
+        if (!tab) {
+          // Tenta buscar por ID convertido para string
+          tab = result.tabs.find((t) => String(t.id) === String(tabId))
+        }
+
+        if (!tab) {
+          // Tenta buscar por nome (caso o ID seja baseado no nome)
+          const decodedTabId = decodeURIComponent(tabId)
+          tab = result.tabs.find(
+            (t) =>
+              t.name.toLowerCase().replace(/\s+/g, "_") === decodedTabId.toLowerCase() ||
+              t.name.toLowerCase().replace(/\s+/g, "-") === decodedTabId.toLowerCase(),
+          )
+        }
+
+        if (!tab) {
+          // Tenta buscar por parte do nome
+          tab = result.tabs.find(
+            (t) =>
+              tabId.includes(t.name.toLowerCase().replace(/\s+/g, "_")) ||
+              tabId.includes(t.name.toLowerCase().replace(/\s+/g, "-")) ||
+              t.name.toLowerCase().includes(tabId.toLowerCase()),
+          )
+        }
+
         if (tab) {
-          console.log("✅ Tab encontrada:", tab.name, "Tipo:", tab.dashboardType)
+          console.log("✅ Tab encontrada:", { id: tab.id, name: tab.name, type: tab.dashboardType })
           setTabData(tab)
           setLastUpdate(new Date())
+          setDebugInfo(null)
         } else {
-          console.log(
-            "❌ Tab não encontrada. IDs disponíveis:",
-            result.tabs.map((t) => t.id),
-          )
+          console.log("❌ Tab não encontrada")
+          setDebugInfo({
+            searchedId: tabId,
+            availableTabs: result.tabs.map((t) => ({ id: t.id, name: t.name })),
+            totalTabs: result.tabs.length,
+          })
         }
       } else {
         console.log("❌ Erro ao buscar tabs:", result)
+        setDebugInfo({ error: "Falha ao carregar dados", result })
       }
     } catch (error) {
-      console.error("Error fetching data:", error)
+      console.error("💥 Erro na busca:", error)
+      setDebugInfo({ error: "Erro de conexão", details: error })
     } finally {
       setLoading(false)
     }
@@ -137,6 +179,7 @@ export default function SharedDashboard() {
         <div className="text-center space-y-4">
           <LoadingSpinner size="lg" />
           <p className="text-gray-600">Carregando dashboard...</p>
+          <p className="text-xs text-gray-400">ID: {tabId}</p>
         </div>
       </div>
     )
@@ -146,10 +189,50 @@ export default function SharedDashboard() {
     return (
       <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-blue-50/30">
         <div className="flex-1 flex items-center justify-center">
-          <Card className="w-full max-w-md text-center">
+          <Card className="w-full max-w-2xl text-center">
             <CardContent className="p-8">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">Dashboard não encontrado</h2>
-              <p className="text-gray-600">O dashboard solicitado não existe ou foi removido.</p>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Dashboard não encontrado</h2>
+              <p className="text-gray-600 mb-6">O dashboard solicitado não existe ou foi removido.</p>
+
+              {/* Debug Info */}
+              {debugInfo && (
+                <div className="bg-gray-50 p-4 rounded-lg text-left text-sm">
+                  <h3 className="font-semibold mb-2">Informações de Debug:</h3>
+                  <p>
+                    <strong>ID Procurado:</strong> {debugInfo.searchedId}
+                  </p>
+                  {debugInfo.availableTabs && (
+                    <div className="mt-2">
+                      <strong>Dashboards Disponíveis ({debugInfo.totalTabs}):</strong>
+                      <ul className="mt-1 space-y-1">
+                        {debugInfo.availableTabs.slice(0, 10).map((tab, index) => (
+                          <li key={index} className="text-xs">
+                            • ID: {tab.id} | Nome: {tab.name}
+                          </li>
+                        ))}
+                        {debugInfo.totalTabs > 10 && (
+                          <li className="text-xs text-gray-500">... e mais {debugInfo.totalTabs - 10} dashboards</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                  {debugInfo.error && (
+                    <p className="text-red-600 mt-2">
+                      <strong>Erro:</strong> {debugInfo.error}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-6">
+                <Button onClick={fetchData} disabled={loading} className="mr-3">
+                  <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+                  Tentar Novamente
+                </Button>
+                <Button variant="outline" onClick={() => (window.location.href = "/")}>
+                  Voltar ao Início
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -427,7 +510,7 @@ export default function SharedDashboard() {
             </Card>
           </div>
 
-          {/* Overview Section - Same as normal dashboard */}
+          {/* Progress Overview */}
           <Card className="shadow-lg border-0">
             <CardHeader className="pb-4">
               <CardTitle className="text-xl font-semibold text-gray-900">
@@ -480,64 +563,59 @@ export default function SharedDashboard() {
                   ></div>
                 </div>
               </div>
-              {!isRollout && (
-                <div className="text-xs text-gray-500 mt-1">
-                  Faltam {100 - progress.successPercentage}% para 100% de aprovação
+
+              {/* Lista de Items */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {tabData.rows.slice(0, 12).map((row, index) => {
+                  const itemName = isRollout
+                    ? row.loja || row.restaurante || row.cliente || row.nome || row.unidade || `Loja ${index + 1}`
+                    : row.pdv ||
+                      row.terminal ||
+                      row.equipamento ||
+                      row.nome_pdv ||
+                      row.nome_teste ||
+                      row.teste ||
+                      row.loja ||
+                      `PDV ${index + 1}`
+
+                  const itemType = isRollout
+                    ? row.status === "Concluído" || row.status === "Concluido"
+                      ? "Novo"
+                      : "Antigo"
+                    : row.tipo_teste || row.categoria || row.tipo || "PDV"
+
+                  return (
+                    <div
+                      key={index}
+                      className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={itemName}>
+                          {itemName}
+                        </h4>
+                        <div
+                          className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(row.status || "Sem Status")}`}
+                        >
+                          {getStatusIcon(row.status || "Sem Status")}
+                          <span>{row.status || "Sem Status"}</span>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {isRollout ? `Sistema: ${itemType}` : `Tipo: ${itemType}`}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {tabData.rows.length > 12 && (
+                <div className="mt-4 text-center">
+                  <p className="text-sm text-gray-500">
+                    Mostrando 12 de {tabData.rows.length} {isRollout ? "lojas" : "testes"}. Use a exportação para ver
+                    todos os dados.
+                  </p>
                 </div>
               )}
             </CardContent>
-
-            {/* Lista de Items - Same as normal dashboard */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {tabData.rows.slice(0, 12).map((row, index) => {
-                const itemName = isRollout
-                  ? row.loja || row.restaurante || row.cliente || row.nome || row.unidade || `Loja ${index + 1}`
-                  : row.pdv ||
-                    row.terminal ||
-                    row.equipamento ||
-                    row.nome_pdv ||
-                    row.nome_teste ||
-                    row.teste ||
-                    row.loja ||
-                    `PDV ${index + 1}`
-
-                const itemType = isRollout
-                  ? row.status === "Concluído" || row.status === "Concluido"
-                    ? "Novo"
-                    : "Antigo"
-                  : row.tipo_teste || row.categoria || row.tipo || "PDV"
-
-                return (
-                  <div
-                    key={index}
-                    className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={itemName}>
-                        {itemName}
-                      </h4>
-                      <div
-                        className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(row.status || "Sem Status")}`}
-                      >
-                        {getStatusIcon(row.status || "Sem Status")}
-                        <span>{row.status || "Sem Status"}</span>
-                      </div>
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {isRollout ? `Sistema: ${itemType}` : `Tipo: ${itemType}`}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            {tabData.rows.length > 12 && (
-              <div className="mt-4 text-center">
-                <p className="text-sm text-gray-500">
-                  Mostrando 12 de {tabData.rows.length} {isRollout ? "lojas" : "testes"}. Use a exportação para ver
-                  todos os dados.
-                </p>
-              </div>
-            )}
           </Card>
         </div>
       </div>
