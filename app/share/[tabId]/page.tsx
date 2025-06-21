@@ -40,9 +40,17 @@ export default function SharedDashboard() {
       if (result.success && result.tabs) {
         const tab = result.tabs.find((t) => t.id === tabId)
         if (tab) {
+          console.log("✅ Tab encontrada:", tab.name, "Tipo:", tab.dashboardType)
           setTabData(tab)
           setLastUpdate(new Date())
+        } else {
+          console.log(
+            "❌ Tab não encontrada. IDs disponíveis:",
+            result.tabs.map((t) => t.id),
+          )
         }
+      } else {
+        console.log("❌ Erro ao buscar tabs:", result)
       }
     } catch (error) {
       console.error("Error fetching data:", error)
@@ -419,7 +427,7 @@ export default function SharedDashboard() {
             </Card>
           </div>
 
-          {/* Progress Overview */}
+          {/* Overview Section - Same as normal dashboard */}
           <Card className="shadow-lg border-0">
             <CardHeader className="pb-4">
               <CardTitle className="text-xl font-semibold text-gray-900">
@@ -472,7 +480,64 @@ export default function SharedDashboard() {
                   ></div>
                 </div>
               </div>
+              {!isRollout && (
+                <div className="text-xs text-gray-500 mt-1">
+                  Faltam {100 - progress.successPercentage}% para 100% de aprovação
+                </div>
+              )}
             </CardContent>
+
+            {/* Lista de Items - Same as normal dashboard */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {tabData.rows.slice(0, 12).map((row, index) => {
+                const itemName = isRollout
+                  ? row.loja || row.restaurante || row.cliente || row.nome || row.unidade || `Loja ${index + 1}`
+                  : row.pdv ||
+                    row.terminal ||
+                    row.equipamento ||
+                    row.nome_pdv ||
+                    row.nome_teste ||
+                    row.teste ||
+                    row.loja ||
+                    `PDV ${index + 1}`
+
+                const itemType = isRollout
+                  ? row.status === "Concluído" || row.status === "Concluido"
+                    ? "Novo"
+                    : "Antigo"
+                  : row.tipo_teste || row.categoria || row.tipo || "PDV"
+
+                return (
+                  <div
+                    key={index}
+                    className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={itemName}>
+                        {itemName}
+                      </h4>
+                      <div
+                        className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(row.status || "Sem Status")}`}
+                      >
+                        {getStatusIcon(row.status || "Sem Status")}
+                        <span>{row.status || "Sem Status"}</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {isRollout ? `Sistema: ${itemType}` : `Tipo: ${itemType}`}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {tabData.rows.length > 12 && (
+              <div className="mt-4 text-center">
+                <p className="text-sm text-gray-500">
+                  Mostrando 12 de {tabData.rows.length} {isRollout ? "lojas" : "testes"}. Use a exportação para ver
+                  todos os dados.
+                </p>
+              </div>
+            )}
           </Card>
         </div>
       </div>
