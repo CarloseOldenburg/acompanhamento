@@ -31,17 +31,21 @@ export interface AIAnalysis {
   dataHash: string
 }
 
-// Função principal que chama a API route
-export async function generateAIInsights(data: DashboardData, forceRefresh = false): Promise<AIAnalysis> {
+// Função principal que chama a API route com contexto executivo
+export async function generateAIInsights(
+  data: DashboardData,
+  forceRefresh = false,
+  isExecutive = false,
+): Promise<AIAnalysis> {
   try {
-    console.log("🤖 Chamando API route para insights da IA...")
+    console.log(`🤖 Chamando API route para insights ${isExecutive ? "EXECUTIVOS" : "padrão"}...`)
 
     const response = await fetch("/api/ai-insights", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ data, forceRefresh }),
+      body: JSON.stringify({ data, forceRefresh, isExecutive }),
     })
 
     if (!response.ok) {
@@ -56,19 +60,19 @@ export async function generateAIInsights(data: DashboardData, forceRefresh = fal
 
     // Log do tipo de análise
     if (result.fromCache) {
-      console.log("🎯 Análise obtida do cache")
+      console.log("🎯 Análise executiva obtida do cache")
     } else if (result.fromLocal) {
-      console.log("📊 Análise local gerada")
+      console.log("📊 Análise executiva local gerada")
     } else if (result.fromAI) {
-      console.log("🤖 Análise da IA gerada com sucesso")
+      console.log("🤖 Análise executiva da IA gerada com sucesso")
     }
 
     return result.analysis
   } catch (error) {
-    console.error("Erro ao chamar API de insights:", error)
+    console.error("Erro ao chamar API de insights executivos:", error)
 
     // Fallback local em caso de erro na API
-    return generateFallbackAnalysis(data)
+    return generateExecutiveFallbackAnalysis(data, isExecutive)
   }
 }
 
@@ -87,6 +91,7 @@ export async function testOpenAIConnection(): Promise<boolean> {
           dashboardType: "testing",
         },
         forceRefresh: true,
+        isExecutive: true,
       }),
     })
 
@@ -108,70 +113,104 @@ export async function clearAICache(): Promise<void> {
     await fetch("/api/ai-insights", {
       method: "DELETE",
     })
-    console.log("🗑️ Cache da IA limpo via API")
+    console.log("🗑️ Cache executivo da IA limpo via API")
   } catch (error) {
-    console.error("Erro ao limpar cache:", error)
+    console.error("Erro ao limpar cache executivo:", error)
   }
 }
 
-// Função para verificar status do cache (não implementada na API ainda)
+// Função para verificar status do cache
 export function getAICacheStatus() {
   return {
     size: 0,
     entries: [],
-    note: "Cache gerenciado pela API route",
+    note: "Cache executivo gerenciado pela API route",
   }
 }
 
-// Fallback local simples
-function generateFallbackAnalysis(data: DashboardData): AIAnalysis {
+// Fallback executivo local
+function generateExecutiveFallbackAnalysis(data: DashboardData, isExecutive: boolean): AIAnalysis {
   const total = data.totalRecords
   const completed = (data.statusCounts["Concluído"] || 0) + (data.statusCounts["Concluido"] || 0)
-  const completionRate = total > 0 ? (completed / total) * 100 : 0
+  const errors = data.statusCounts["Erro"] || 0
   const noResponse = (data.statusCounts["Sem retorno"] || 0) + (data.statusCounts["Sem Retorno"] || 0)
+
+  const completionRate = total > 0 ? (completed / total) * 100 : 0
+  const errorRate = total > 0 ? (errors / total) * 100 : 0
   const noResponseRate = total > 0 ? (noResponse / total) * 100 : 0
 
+  const isRollout = data.dashboardType === "rollout"
+
   let riskLevel: "low" | "medium" | "high" = "medium"
-  if (noResponseRate > 40) riskLevel = "high"
-  else if (noResponseRate < 20 && completionRate > 60) riskLevel = "low"
+  let executiveSummary = ""
+
+  if (isRollout) {
+    if (noResponseRate > 25) {
+      riskLevel = "high"
+      executiveSummary = `🚨 CRÍTICO: ${noResponseRate.toFixed(0)}% das lojas sem confirmação compromete cronograma. DECISÃO: Estabelecer prazo limite de 48h e escalar regionalmente.`
+    } else if (completionRate > 80) {
+      riskLevel = "low"
+      executiveSummary = `✅ ROLLOUT AVANÇADO: ${completionRate.toFixed(0)}% concluído. DECISÃO: Acelerar últimas migrações e agendar desativação do sistema antigo.`
+    } else {
+      executiveSummary = `📊 ROLLOUT EM ANDAMENTO: ${completionRate.toFixed(0)}% migrado. DECISÃO: Manter cronograma e focar em lojas com dificuldades.`
+    }
+  } else {
+    if (errorRate > 10) {
+      riskLevel = "high"
+      executiveSummary = `🚨 QUALIDADE CRÍTICA: ${errorRate.toFixed(0)}% de falhas técnicas. DECISÃO: PAUSAR testes e corrigir integração VS-PDV imediatamente.`
+    } else if (errorRate === 0 && completionRate > 70) {
+      riskLevel = "low"
+      executiveSummary = `✅ QUALIDADE EXCELENTE: 0% erros técnicos. DECISÃO: Manter padrão e expandir cobertura de testes.`
+    } else {
+      executiveSummary = `📊 TESTES ESTÁVEIS: ${completionRate.toFixed(0)}% concluído, ${errorRate.toFixed(0)}% erros. DECISÃO: Continuar ritmo atual.`
+    }
+  }
 
   return {
-    summary: `📊 Análise de Emergência: ${completed} de ${total} itens concluídos (${completionRate.toFixed(1)}%). ${
-      noResponseRate > 40
-        ? `🚨 CRÍTICO: ${noResponseRate.toFixed(1)}% sem retorno requer ação imediata.`
-        : "Sistema funcionando com análise local."
-    }`,
+    summary: executiveSummary,
     insights: [
       {
-        type: noResponseRate > 40 ? "danger" : "info",
-        title: noResponseRate > 40 ? "Taxa Crítica de Sem Retorno" : "Análise Básica",
-        message:
-          noResponseRate > 40
-            ? `${noResponseRate.toFixed(1)}% sem retorno indica problemas graves de comunicação`
-            : "Sistema funcionando com análise local básica",
-        recommendation:
-          noResponseRate > 40
-            ? "URGENTE: Implementar follow-up sistemático e revisar comunicação"
-            : "Aguardar reconexão com sistema de IA",
-        confidence: 80,
-        priority: noResponseRate > 40 ? "high" : "low",
+        type: riskLevel === "high" ? "danger" : riskLevel === "medium" ? "warning" : "success",
+        title: isRollout ? "Status do Rollout" : "Qualidade dos Testes",
+        message: isRollout
+          ? `${completionRate.toFixed(0)}% das lojas migradas, ${noResponseRate.toFixed(0)}% sem confirmação`
+          : `${completionRate.toFixed(0)}% concluído, ${errorRate.toFixed(0)}% de falhas técnicas`,
+        recommendation: isRollout
+          ? noResponseRate > 25
+            ? "Estabelecer prazo limite urgente"
+            : "Manter cronograma atual"
+          : errorRate > 10
+            ? "Pausar testes e corrigir problemas"
+            : "Continuar processo atual",
+        confidence: 85,
+        priority: riskLevel === "high" ? "high" : "medium",
       },
     ],
     predictions: {
-      completionTimeEstimate:
-        total > completed ? `${Math.ceil((total - completed) / Math.max(1, completed / 7))} dias` : "Concluído",
+      completionTimeEstimate: isRollout
+        ? total > completed
+          ? `${Math.ceil((total - completed) / Math.max(2, completed / 14))} dias`
+          : "Concluído"
+        : "Processo contínuo",
       riskLevel,
-      nextActions:
-        noResponseRate > 40
-          ? ["Implementar follow-up automático urgente", "Revisar todos os contatos", "Escalar para gestão superior"]
-          : ["Continuar monitoramento", "Aguardar reconexão com IA"],
+      nextActions: isRollout
+        ? noResponseRate > 25
+          ? ["Estabelecer prazo limite de 48h", "Escalar para gerência regional", "Suporte presencial"]
+          : ["Manter cronograma", "Focar em lojas pendentes", "Preparar encerramento"]
+        : errorRate > 10
+          ? ["PAUSAR novos testes", "Corrigir problemas de integração", "Revisar configurações"]
+          : ["Manter qualidade", "Otimizar casos pendentes", "Expandir cobertura"],
     },
     performance: {
-      score: Math.round(Math.max(10, completionRate - noResponseRate)),
-      trend: noResponseRate > 40 ? "declining" : "stable",
-      benchmarkComparison: "Análise básica ativa",
+      score: Math.round(
+        isRollout
+          ? completionRate * 0.6 + Math.max(0, 100 - noResponseRate * 2) * 0.4
+          : completionRate * 0.4 + Math.max(0, 100 - errorRate * 5) * 0.6,
+      ),
+      trend: riskLevel === "high" ? "declining" : riskLevel === "low" ? "improving" : "stable",
+      benchmarkComparison: "Análise executiva local ativa",
     },
     timestamp: Date.now(),
-    dataHash: `fallback-${Date.now()}`,
+    dataHash: `exec-fallback-${Date.now()}`,
   }
 }

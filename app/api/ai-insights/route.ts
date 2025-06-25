@@ -6,9 +6,9 @@ import type { DashboardData } from "../../../types"
 // Cache para evitar requisições desnecessárias
 const analysisCache = new Map<string, any>()
 const statusHashCache = new Map<string, string>()
-const CACHE_DURATION = 15 * 60 * 1000 // 15 minutos (aumentado)
+const CACHE_DURATION = 15 * 60 * 1000 // 15 minutos
 
-// Função para gerar hash específico dos STATUS (não dos dados completos)
+// Função para gerar hash específico dos STATUS
 function generateStatusHash(statusCounts: Record<string, number>): string {
   const statusString = Object.entries(statusCounts)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -17,7 +17,6 @@ function generateStatusHash(statusCounts: Record<string, number>): string {
   return btoa(statusString).slice(0, 12)
 }
 
-// Função para gerar hash dos dados completos
 function generateDataHash(data: DashboardData): string {
   const key = `${data.totalRecords}-${JSON.stringify(data.statusCounts)}-${data.dashboardType}`
   return btoa(key).slice(0, 16)
@@ -25,45 +24,51 @@ function generateDataHash(data: DashboardData): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const { data, forceRefresh = false }: { data: DashboardData; forceRefresh?: boolean } = await request.json()
+    const {
+      data,
+      forceRefresh = false,
+      isExecutive = false,
+    }: {
+      data: DashboardData
+      forceRefresh?: boolean
+      isExecutive?: boolean
+    } = await request.json()
 
     const dataHash = generateDataHash(data)
     const statusHash = generateStatusHash(data.statusCounts)
     const now = Date.now()
 
-    // Verificar se os STATUS mudaram (otimização principal)
+    // Verificar se os STATUS mudaram
     const lastStatusHash = statusHashCache.get(data.tabId || "default")
     const statusChanged = lastStatusHash !== statusHash
 
-    console.log(`📊 Análise para ${data.tabName}:`)
-    console.log(`- Status hash atual: ${statusHash}`)
-    console.log(`- Status hash anterior: ${lastStatusHash}`)
+    console.log(`📊 Análise ${isExecutive ? "EXECUTIVA" : "padrão"} para ${data.tabName}:`)
     console.log(`- Status mudaram: ${statusChanged}`)
 
     // Verificar cache primeiro
-    const cached = analysisCache.get(dataHash)
+    const cached = analysisCache.get(dataHash + (isExecutive ? "-exec" : ""))
     if (!forceRefresh && cached && now - cached.timestamp < CACHE_DURATION && !statusChanged) {
-      console.log("🎯 Usando análise em cache - status não mudaram")
+      console.log("🎯 Usando análise executiva em cache")
       return NextResponse.json({ success: true, analysis: cached, fromCache: true })
     }
 
-    // Se status não mudaram e temos análise recente, usar análise local otimizada
+    // Se status não mudaram, usar análise local
     if (!forceRefresh && !statusChanged && cached) {
-      console.log("📊 Status não mudaram - usando análise local otimizada")
-      const localAnalysis = generateContextualLocalAnalysis(data)
-      analysisCache.set(dataHash, localAnalysis)
+      console.log("📊 Status não mudaram - análise local executiva")
+      const localAnalysis = generateExecutiveLocalAnalysis(data)
+      analysisCache.set(dataHash + (isExecutive ? "-exec" : ""), localAnalysis)
       return NextResponse.json({ success: true, analysis: localAnalysis, fromLocal: true })
     }
 
-    // Verificar se a API key está disponível
+    // Verificar API key
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
-      console.log("❌ OPENAI_API_KEY não configurada, usando análise local")
-      const localAnalysis = generateContextualLocalAnalysis(data)
+      console.log("❌ OPENAI_API_KEY não configurada")
+      const localAnalysis = generateExecutiveLocalAnalysis(data)
       return NextResponse.json({ success: true, analysis: localAnalysis, fromLocal: true })
     }
 
-    console.log("🤖 STATUS MUDARAM - Fazendo requisição à IA com contexto específico")
+    console.log("🤖 Gerando insights EXECUTIVOS via IA")
 
     // Atualizar hash dos status
     statusHashCache.set(data.tabId || "default", statusHash)
@@ -71,336 +76,240 @@ export async function POST(request: NextRequest) {
     const isRollout = data.dashboardType === "rollout"
     const isTesting = data.dashboardType === "testing"
 
-    // Calcular métricas básicas
-    const total = data.totalRecords
-    const completed =
-      (data.statusCounts["Concluído"] || 0) +
-      (data.statusCounts["Concluido"] || 0) +
-      (data.statusCounts["Aprovado"] || 0)
-    const pending = (data.statusCounts["Pendente"] || 0) + (data.statusCounts["Aguardando"] || 0)
-    const errors = data.statusCounts["Erro"] || 0
-    const noResponse = (data.statusCounts["Sem retorno"] || 0) + (data.statusCounts["Sem Retorno"] || 0)
-    const inProgress = (data.statusCounts["Agendado"] || 0) + (data.statusCounts["Em Andamento"] || 0)
+    // Calcular métricas executivas
+    const metrics = calculateExecutiveMetrics(data)
 
-    const completionRate = total > 0 ? (completed / total) * 100 : 0
-    const errorRate = total > 0 ? (errors / total) * 100 : 0
-    const noResponseRate = total > 0 ? (noResponse / total) * 100 : 0
-
-    // Prompt contextualizado baseado no tipo de processo
-    let contextualPrompt = ""
+    // Prompt executivo otimizado
+    let executivePrompt = ""
     let systemPrompt = ""
 
     if (isRollout) {
-      contextualPrompt = `
-      CONTEXTO: ROLLOUT DE MIGRAÇÃO DE SISTEMA
-      Este é um processo de migração de ${total} lojas do sistema antigo para o novo sistema.
+      executivePrompt = `
+      ANÁLISE EXECUTIVA - ROLLOUT DE MIGRAÇÃO
       
-      📊 SITUAÇÃO ATUAL:
-      - Total de lojas: ${total}
-      - Migradas (Concluído): ${completed} (${completionRate.toFixed(1)}%)
-      - Agendadas: ${inProgress}
-      - Pendentes: ${pending}
-      - Sem retorno: ${noResponse} (${noResponseRate.toFixed(1)}%)
-      - Erros: ${errors}
-
-      CARACTERÍSTICAS DO ROLLOUT:
-      - Processo de migração única por loja
-      - Cada loja só muda de status uma vez
-      - "Sem retorno" indica falta de comunicação/confirmação
-      - Meta: 100% das lojas migradas
-      - Criticidade: Sem retorno > 30% é crítico para cronograma
-
-      Analise como especialista em rollout de sistemas:
+      📊 SITUAÇÃO:
+      - ${metrics.total} lojas no rollout
+      - ${metrics.completed} migradas (${metrics.completionRate.toFixed(1)}%)
+      - ${metrics.noResponse} sem confirmação (${metrics.noResponseRate.toFixed(1)}%)
+      - ${metrics.errors} com erro
+      
+      🎯 METAS EXECUTIVAS:
+      - Meta: 100% lojas migradas
+      - Prazo crítico: Sem retorno > 25%
+      - Risco alto: < 60% conclusão
+      
+      FORNEÇA ANÁLISE EXECUTIVA EM 3 PONTOS:
+      1. STATUS ATUAL (1 frase direta)
+      2. RISCO PRINCIPAL (1 frase + impacto no cronograma)
+      3. AÇÃO EXECUTIVA (1 decisão específica)
       `
 
-      systemPrompt = "Especialista em rollout e migração de sistemas com foco em cronograma e comunicação."
+      systemPrompt = "Consultor executivo especializado em rollouts. Respostas diretas para tomada de decisão."
     } else if (isTesting) {
-      contextualPrompt = `
-      CONTEXTO: TESTES DE INTEGRAÇÃO CONTÍNUOS
-      Este é um processo contínuo de validação de integração entre sistema VS e PDVs de restaurantes.
+      executivePrompt = `
+      ANÁLISE EXECUTIVA - TESTES DE INTEGRAÇÃO
       
-      📊 SITUAÇÃO ATUAL:
-      - Total de testes: ${total}
-      - Concluídos: ${completed} (${completionRate.toFixed(1)}%)
-      - Agendados: ${inProgress}
-      - Pendentes: ${pending}
-      - Sem retorno: ${noResponse} (${noResponseRate.toFixed(1)}%)
-      - Erros: ${errors} (${errorRate.toFixed(1)}%)
-
-      CARACTERÍSTICAS DOS TESTES:
-      - Processo contínuo (novos testes sempre chegando)
-      - Validação de integração VS ↔ PDV
-      - "Sem retorno" indica problemas de comunicação com restaurantes
-      - "Erro" indica falha técnica na integração
-      - Meta: < 5% erros, < 15% sem retorno
-      - Criticidade: Erros técnicos são mais críticos que sem retorno
-
-      Analise como especialista em testes de integração:
+      📊 SITUAÇÃO:
+      - ${metrics.total} testes de integração VS-PDV
+      - ${metrics.completed} concluídos (${metrics.completionRate.toFixed(1)}%)
+      - ${metrics.errors} falhas técnicas (${metrics.errorRate.toFixed(1)}%)
+      - ${metrics.noResponse} sem retorno (${metrics.noResponseRate.toFixed(1)}%)
+      
+      🎯 METAS EXECUTIVAS:
+      - Meta qualidade: < 5% erros técnicos
+      - Meta comunicação: < 20% sem retorno
+      - Criticidade: Erros > 10% = PARAR TESTES
+      
+      FORNEÇA ANÁLISE EXECUTIVA EM 3 PONTOS:
+      1. QUALIDADE TÉCNICA (1 frase sobre erros)
+      2. RISCO OPERACIONAL (1 frase + impacto)
+      3. DECISÃO EXECUTIVA (1 ação específica)
       `
 
-      systemPrompt = "Especialista em testes de integração e validação de sistemas com foco em qualidade técnica."
+      systemPrompt = "Consultor executivo especializado em qualidade de software. Foco em decisões técnicas críticas."
     }
 
-    const fullPrompt = `${contextualPrompt}
+    const fullPrompt = `${executivePrompt}
 
-    Forneça análise CONCISA e CONTEXTUAL em português:
-    1. Situação atual do processo (2 frases)
-    2. Principal risco/oportunidade específico (1 frase)
-    3. Ação prioritária contextual (1 frase)
-    4. Previsão realista de conclusão
-    5. Score 0-100 baseado no contexto
-
-    Seja direto, prático e específico para o tipo de processo.
+    FORMATO OBRIGATÓRIO:
+    - Máximo 3 frases
+    - Linguagem executiva direta
+    - Foco em DECISÃO, não descrição
+    - Português do Brasil
     `
 
-    // Configurar o modelo OpenAI
-    const model = openai("gpt-4o-mini", {
-      apiKey: apiKey,
-    })
+    // Configurar modelo OpenAI
+    const model = openai("gpt-4o-mini", { apiKey })
 
     const { text } = await generateText({
-      model: model,
+      model,
       prompt: fullPrompt,
       system: systemPrompt,
-      maxTokens: 400,
+      maxTokens: 200, // Reduzido para respostas mais concisas
     })
 
-    // Processar resposta da IA e gerar insights estruturados
-    const insights = generateContextualInsights(data, completionRate, errorRate, noResponseRate, isRollout, isTesting)
-    const performanceScore = calculateContextualScore(
-      completionRate,
-      errorRate,
-      noResponseRate,
-      inProgress,
-      total,
-      isRollout,
-    )
-    const trend = determineContextualTrend(completionRate, errorRate, noResponseRate, isRollout)
-    const completionEstimate = estimateContextualCompletion(completed, total, inProgress, isRollout, isTesting)
-    const riskLevel = determineContextualRisk(errorRate, noResponseRate, completionRate, isRollout)
-
+    // Gerar análise executiva estruturada
     const analysis = {
       summary: text,
-      insights,
+      insights: generateExecutiveInsights(data, metrics, isRollout, isTesting),
       predictions: {
-        completionTimeEstimate: completionEstimate,
-        riskLevel,
-        nextActions: generateContextualActions(data, isRollout, isTesting, errorRate, noResponseRate, completionRate),
+        completionTimeEstimate: estimateExecutiveCompletion(metrics, isRollout, isTesting),
+        riskLevel: determineExecutiveRisk(metrics, isRollout),
+        nextActions: generateExecutiveActions(metrics, isRollout, isTesting),
       },
       performance: {
-        score: performanceScore,
-        trend,
-        benchmarkComparison: generateContextualBenchmark(performanceScore, isRollout, isTesting),
+        score: calculateExecutiveScore(metrics, isRollout),
+        trend: determineExecutiveTrend(metrics, isRollout),
+        benchmarkComparison: generateExecutiveBenchmark(metrics, isRollout, isTesting),
       },
       timestamp: now,
       dataHash,
     }
 
     // Salvar no cache
-    analysisCache.set(dataHash, analysis)
-
-    // Limpar cache antigo
+    analysisCache.set(dataHash + (isExecutive ? "-exec" : ""), analysis)
     cleanupCache()
 
     return NextResponse.json({ success: true, analysis, fromAI: true, statusChanged })
   } catch (error: any) {
-    console.error("Erro ao gerar insights da IA:", error)
-
-    // Fallback com análise local
+    console.error("Erro ao gerar insights executivos:", error)
     const { data } = await request.json()
-    const localAnalysis = generateContextualLocalAnalysis(data) || generateFallbackAnalysis(data)
-
+    const localAnalysis = generateExecutiveLocalAnalysis(data)
     return NextResponse.json({ success: true, analysis: localAnalysis, fromLocal: true, error: error.message })
   }
 }
 
-// Análise local contextualizada
-function generateContextualLocalAnalysis(data: DashboardData) {
-  try {
-    const isRollout = data.dashboardType === "rollout"
-    const isTesting = data.dashboardType === "testing"
-    const total = data.totalRecords
+// Calcular métricas executivas precisas
+function calculateExecutiveMetrics(data: DashboardData) {
+  const total = data.totalRecords
 
-    if (total === 0) return null
+  // Status padronizados
+  const completed = (data.statusCounts["Concluído"] || 0) + (data.statusCounts["Concluido"] || 0)
+  const pending = data.statusCounts["Pendente"] || 0
+  const scheduled = data.statusCounts["Agendado"] || 0
+  const errors = data.statusCounts["Erro"] || 0
+  const noResponse = (data.statusCounts["Sem retorno"] || 0) + (data.statusCounts["Sem Retorno"] || 0)
+  const inProgress = data.statusCounts["Em Andamento"] || 0
 
-    const completed = (data.statusCounts["Concluído"] || 0) + (data.statusCounts["Concluido"] || 0)
-    const errors = data.statusCounts["Erro"] || 0
-    const noResponse = (data.statusCounts["Sem retorno"] || 0) + (data.statusCounts["Sem Retorno"] || 0)
-    const inProgress = (data.statusCounts["Agendado"] || 0) + (data.statusCounts["Em Andamento"] || 0)
+  const completionRate = total > 0 ? (completed / total) * 100 : 0
+  const errorRate = total > 0 ? (errors / total) * 100 : 0
+  const noResponseRate = total > 0 ? (noResponse / total) * 100 : 0
+  const pendingRate = total > 0 ? (pending / total) * 100 : 0
 
-    const completionRate = (completed / total) * 100
-    const errorRate = (errors / total) * 100
-    const noResponseRate = (noResponse / total) * 100
-
-    let summary = ""
-
-    if (isRollout) {
-      summary = `🏢 Análise de Rollout: ${completed} de ${total} lojas migradas (${completionRate.toFixed(1)}%). `
-
-      if (noResponseRate > 30) {
-        summary += `🚨 CRÍTICO: ${noResponseRate.toFixed(1)}% das lojas sem confirmação compromete cronograma de migração. `
-        summary += `Ação urgente: Contatar lojas pendentes e estabelecer prazo limite para migração.`
-      } else if (completionRate > 80) {
-        summary += `✅ Migração avançada! Foco nas ${total - completed} lojas restantes. `
-        summary += `Recomendação: Acelerar últimas migrações e preparar encerramento do sistema antigo.`
-      } else if (completionRate < 50) {
-        summary += `📈 Migração lenta (${completionRate.toFixed(1)}%). `
-        summary += `Recomendação: Intensificar comunicação e suporte às lojas para acelerar processo.`
-      } else {
-        summary += `📊 Migração em ritmo moderado. `
-        summary += `Recomendação: Manter cronograma e focar em lojas com dificuldades.`
-      }
-    } else if (isTesting) {
-      summary = `🔧 Análise de Testes: ${completed} de ${total} testes concluídos (${completionRate.toFixed(1)}%). `
-
-      if (errorRate > 10) {
-        summary += `🚨 CRÍTICO: ${errorRate.toFixed(1)}% de falhas técnicas indica problemas graves de integração. `
-        summary += `Ação urgente: Pausar novos testes e corrigir problemas de integração VS-PDV.`
-      } else if (noResponseRate > 40) {
-        summary += `⚠️ ALTO: ${noResponseRate.toFixed(1)}% sem retorno de restaurantes. `
-        summary += `Recomendação: Melhorar comunicação e follow-up com estabelecimentos.`
-      } else if (errorRate === 0 && completionRate > 70) {
-        summary += `✅ Excelente qualidade! Sem erros técnicos e boa taxa de conclusão. `
-        summary += `Recomendação: Manter padrão de qualidade e documentar melhores práticas.`
-      } else {
-        summary += `📊 Processo de testes estável. `
-        summary += `Recomendação: Continuar monitoramento e otimizar casos pendentes.`
-      }
-    }
-
-    if (errorRate > 0 && isTesting) {
-      summary += ` ⚠️ ${errors} erro(s) técnico(s) requer investigação imediata.`
-    }
-
-    if (inProgress > 0) {
-      summary += ` 🔄 ${inProgress} ${isRollout ? "migração(ões)" : "teste(s)"} em andamento.`
-    }
-
-    const insights = generateContextualInsights(data, completionRate, errorRate, noResponseRate, isRollout, isTesting)
-    const performanceScore = calculateContextualScore(
-      completionRate,
-      errorRate,
-      noResponseRate,
-      inProgress,
-      total,
-      isRollout,
-    )
-    const trend = determineContextualTrend(completionRate, errorRate, noResponseRate, isRollout)
-    const completionEstimate = estimateContextualCompletion(completed, total, inProgress, isRollout, isTesting)
-    const riskLevel = determineContextualRisk(errorRate, noResponseRate, completionRate, isRollout)
-
-    return {
-      summary,
-      insights,
-      predictions: {
-        completionTimeEstimate: completionEstimate,
-        riskLevel,
-        nextActions: generateContextualActions(data, isRollout, isTesting, errorRate, noResponseRate, completionRate),
-      },
-      performance: {
-        score: performanceScore,
-        trend,
-        benchmarkComparison: generateContextualBenchmark(performanceScore, isRollout, isTesting),
-      },
-      timestamp: Date.now(),
-      dataHash: generateDataHash(data),
-    }
-  } catch (error) {
-    console.error("Erro na análise local contextual:", error)
-    return null
+  return {
+    total,
+    completed,
+    pending,
+    scheduled,
+    errors,
+    noResponse,
+    inProgress,
+    completionRate,
+    errorRate,
+    noResponseRate,
+    pendingRate,
   }
 }
 
-function generateContextualInsights(
-  data: DashboardData,
-  completionRate: number,
-  errorRate: number,
-  noResponseRate: number,
-  isRollout: boolean,
-  isTesting: boolean,
-) {
+// Análise local executiva
+function generateExecutiveLocalAnalysis(data: DashboardData) {
+  const isRollout = data.dashboardType === "rollout"
+  const isTesting = data.dashboardType === "testing"
+  const metrics = calculateExecutiveMetrics(data)
+
+  let summary = ""
+
+  if (isRollout) {
+    if (metrics.noResponseRate > 25) {
+      summary = `🚨 CRÍTICO: ${metrics.noResponseRate.toFixed(0)}% das lojas sem confirmação compromete cronograma. DECISÃO: Estabelecer prazo limite de 48h e escalar para regional. IMPACTO: Atraso no desligamento do sistema antigo.`
+    } else if (metrics.completionRate > 80) {
+      summary = `✅ ROLLOUT AVANÇADO: ${metrics.completionRate.toFixed(0)}% concluído, restam ${metrics.total - metrics.completed} lojas. DECISÃO: Acelerar últimas migrações e agendar desativação do sistema antigo. PRAZO: 2 semanas.`
+    } else if (metrics.completionRate < 50) {
+      summary = `⚠️ ROLLOUT LENTO: Apenas ${metrics.completionRate.toFixed(0)}% migrado. DECISÃO: Reforçar equipe de suporte e intensificar comunicação. RISCO: Não cumprimento do cronograma.`
+    } else {
+      summary = `📊 ROLLOUT EM ANDAMENTO: ${metrics.completionRate.toFixed(0)}% migrado, ritmo adequado. DECISÃO: Manter cronograma atual e focar em lojas com dificuldades. PRÓXIMO: Revisar em 1 semana.`
+    }
+  } else if (isTesting) {
+    if (metrics.errorRate > 10) {
+      summary = `🚨 QUALIDADE CRÍTICA: ${metrics.errorRate.toFixed(0)}% de falhas técnicas. DECISÃO: PAUSAR novos testes imediatamente e corrigir integração VS-PDV. IMPACTO: Risco de instabilidade em produção.`
+    } else if (metrics.errorRate === 0 && metrics.completionRate > 70) {
+      summary = `✅ QUALIDADE EXCELENTE: 0% erros técnicos, ${metrics.completionRate.toFixed(0)}% concluído. DECISÃO: Manter padrão atual e documentar melhores práticas. PRÓXIMO: Expandir testes.`
+    } else if (metrics.noResponseRate > 40) {
+      summary = `⚠️ COMUNICAÇÃO DEFICIENTE: ${metrics.noResponseRate.toFixed(0)}% sem retorno dos restaurantes. DECISÃO: Implementar follow-up automático e canal direto. RISCO: Atraso na validação.`
+    } else {
+      summary = `📊 TESTES ESTÁVEIS: ${metrics.completionRate.toFixed(0)}% concluído, ${metrics.errorRate.toFixed(0)}% erros. DECISÃO: Continuar ritmo atual e otimizar casos pendentes. QUALIDADE: Dentro do esperado.`
+    }
+  }
+
+  return {
+    summary,
+    insights: generateExecutiveInsights(data, metrics, isRollout, isTesting),
+    predictions: {
+      completionTimeEstimate: estimateExecutiveCompletion(metrics, isRollout, isTesting),
+      riskLevel: determineExecutiveRisk(metrics, isRollout),
+      nextActions: generateExecutiveActions(metrics, isRollout, isTesting),
+    },
+    performance: {
+      score: calculateExecutiveScore(metrics, isRollout),
+      trend: determineExecutiveTrend(metrics, isRollout),
+      benchmarkComparison: generateExecutiveBenchmark(metrics, isRollout, isTesting),
+    },
+    timestamp: Date.now(),
+    dataHash: generateDataHash(data),
+  }
+}
+
+function generateExecutiveInsights(data: DashboardData, metrics: any, isRollout: boolean, isTesting: boolean) {
   const insights = []
 
   if (isRollout) {
-    // Insights específicos para ROLLOUT
-    if (noResponseRate > 30) {
+    // Insight crítico para rollout
+    if (metrics.noResponseRate > 25) {
       insights.push({
         type: "danger",
-        title: "Cronograma de Migração em Risco",
-        message: `${noResponseRate.toFixed(1)}% das lojas sem confirmação compromete o cronograma de rollout`,
-        recommendation: "Estabelecer prazo limite e contatar lojas pendentes urgentemente",
+        title: "Cronograma em Risco",
+        message: `${metrics.noResponseRate.toFixed(0)}% das lojas sem confirmação`,
+        recommendation: "Estabelecer prazo limite de 48h e escalar regionalmente",
         confidence: 95,
         priority: "high",
-        metrics: { current: noResponseRate, target: 15, trend: "up" },
+        metrics: { current: metrics.noResponseRate, target: 15, trend: "up" },
       })
     }
 
-    if (completionRate >= 80) {
+    if (metrics.completionRate > 80) {
       insights.push({
         type: "success",
-        title: "Migração Quase Completa",
-        message: `${completionRate.toFixed(1)}% das lojas já migradas - reta final do rollout`,
-        recommendation: "Focar nas lojas restantes e preparar desativação do sistema antigo",
+        title: "Reta Final do Rollout",
+        message: `${metrics.completed} de ${metrics.total} lojas migradas`,
+        recommendation: "Agendar desativação do sistema antigo em 2 semanas",
         confidence: 90,
         priority: "medium",
-        metrics: { current: completionRate, target: 100, trend: "up" },
-      })
-    } else if (completionRate < 50) {
-      insights.push({
-        type: "warning",
-        title: "Migração Lenta",
-        message: `Apenas ${completionRate.toFixed(1)}% das lojas migradas - ritmo abaixo do esperado`,
-        recommendation: "Intensificar suporte e comunicação para acelerar migração",
-        confidence: 85,
-        priority: "high",
-        metrics: { current: completionRate, target: 80, trend: "stable" },
+        metrics: { current: metrics.completionRate, target: 100, trend: "up" },
       })
     }
   } else if (isTesting) {
-    // Insights específicos para TESTES DE INTEGRAÇÃO
-    if (errorRate > 10) {
+    // Insight crítico para testes
+    if (metrics.errorRate > 10) {
       insights.push({
         type: "danger",
-        title: "Falhas Críticas de Integração",
-        message: `${errorRate.toFixed(1)}% de erros técnicos indica problemas graves na integração VS-PDV`,
-        recommendation: "URGENTE: Pausar novos testes e corrigir problemas de integração",
+        title: "Qualidade Crítica",
+        message: `${metrics.errorRate.toFixed(0)}% de falhas técnicas na integração`,
+        recommendation: "PAUSAR testes e corrigir problemas de integração VS-PDV",
         confidence: 98,
         priority: "high",
-        metrics: { current: errorRate, target: 5, trend: "up" },
+        metrics: { current: metrics.errorRate, target: 5, trend: "up" },
       })
-    } else if (errorRate === 0) {
+    }
+
+    if (metrics.errorRate === 0) {
       insights.push({
         type: "success",
         title: "Integração Estável",
-        message: "Nenhum erro técnico detectado - integração VS-PDV funcionando perfeitamente",
-        recommendation: "Manter padrão de qualidade e documentar configurações bem-sucedidas",
+        message: "Zero erros técnicos detectados",
+        recommendation: "Manter padrão e expandir cobertura de testes",
         confidence: 90,
         priority: "low",
-        metrics: { current: errorRate, target: 5, trend: "stable" },
-      })
-    }
-
-    if (noResponseRate > 40) {
-      insights.push({
-        type: "warning",
-        title: "Comunicação com Restaurantes",
-        message: `${noResponseRate.toFixed(1)}% sem retorno indica problemas de comunicação com estabelecimentos`,
-        recommendation: "Melhorar follow-up e canais de comunicação com restaurantes",
-        confidence: 85,
-        priority: "medium",
-        metrics: { current: noResponseRate, target: 15, trend: "up" },
-      })
-    }
-
-    if (completionRate > 70 && errorRate < 5) {
-      insights.push({
-        type: "success",
-        title: "Processo de Testes Eficiente",
-        message: `${completionRate.toFixed(1)}% de conclusão com baixa taxa de erros`,
-        recommendation: "Processo funcionando bem - manter ritmo e padrão de qualidade",
-        confidence: 88,
-        priority: "low",
-        metrics: { current: completionRate, target: 80, trend: "up" },
+        metrics: { current: metrics.errorRate, target: 5, trend: "stable" },
       })
     }
   }
@@ -408,193 +317,104 @@ function generateContextualInsights(
   return insights
 }
 
-function calculateContextualScore(
-  completionRate: number,
-  errorRate: number,
-  noResponseRate: number,
-  inProgress: number,
-  total: number,
-  isRollout: boolean,
-): number {
-  let score = 0
-
+function calculateExecutiveScore(metrics: any, isRollout: boolean): number {
   if (isRollout) {
-    // Para rollout: foco em conclusão e comunicação
-    score += (completionRate / 100) * 50 // 50% do score
-    score += Math.max(0, (100 - noResponseRate * 1.5) / 100) * 30 // 30% do score
-    score += Math.max(0, (100 - errorRate * 3) / 100) * 20 // 20% do score
+    // Score executivo para rollout: foco em cronograma
+    let score = metrics.completionRate * 0.6 // 60% conclusão
+    score += Math.max(0, 100 - metrics.noResponseRate * 2) * 0.3 // 30% comunicação
+    score += Math.max(0, 100 - metrics.errorRate * 5) * 0.1 // 10% erros
+    return Math.round(Math.max(0, Math.min(100, score)))
   } else {
-    // Para testes: foco em qualidade técnica
-    score += (completionRate / 100) * 35 // 35% do score
-    score += Math.max(0, (100 - errorRate * 4) / 100) * 40 // 40% do score (mais peso)
-    score += Math.max(0, (100 - noResponseRate * 1.2) / 100) * 25 // 25% do score
+    // Score executivo para testes: foco em qualidade
+    let score = metrics.completionRate * 0.4 // 40% conclusão
+    score += Math.max(0, 100 - metrics.errorRate * 5) * 0.5 // 50% qualidade
+    score += Math.max(0, 100 - metrics.noResponseRate * 1.5) * 0.1 // 10% comunicação
+    return Math.round(Math.max(0, Math.min(100, score)))
   }
-
-  return Math.round(Math.max(0, Math.min(100, score)))
 }
 
-function determineContextualTrend(
-  completionRate: number,
-  errorRate: number,
-  noResponseRate: number,
-  isRollout: boolean,
-) {
+function determineExecutiveRisk(metrics: any, isRollout: boolean): "low" | "medium" | "high" {
   if (isRollout) {
-    if (completionRate > 80 && noResponseRate < 20) return "improving"
-    if (completionRate < 40 || noResponseRate > 40) return "declining"
+    if (metrics.noResponseRate > 30 || metrics.completionRate < 40) return "high"
+    if (metrics.noResponseRate > 20 || metrics.completionRate < 70) return "medium"
+    return "low"
   } else {
-    if (completionRate > 70 && errorRate < 5 && noResponseRate < 20) return "improving"
-    if (errorRate > 15 || noResponseRate > 50) return "declining"
+    if (metrics.errorRate > 15 || metrics.noResponseRate > 50) return "high"
+    if (metrics.errorRate > 8 || metrics.noResponseRate > 30) return "medium"
+    return "low"
+  }
+}
+
+function estimateExecutiveCompletion(metrics: any, isRollout: boolean, isTesting: boolean): string {
+  if (isRollout) {
+    const remaining = metrics.total - metrics.completed
+    if (remaining <= 0) return "Concluído"
+
+    const dailyRate = Math.max(3, Math.floor(metrics.completed / 14)) // 2 semanas
+    const days = Math.ceil(remaining / dailyRate)
+
+    if (days <= 7) return `${days} dias`
+    if (days <= 30) return `${Math.ceil(days / 7)} semanas`
+    return `${Math.ceil(days / 30)} meses`
+  } else if (isTesting) {
+    return "Processo contínuo"
+  }
+  return "Indeterminado"
+}
+
+function generateExecutiveActions(metrics: any, isRollout: boolean, isTesting: boolean): string[] {
+  const actions = []
+
+  if (isRollout) {
+    if (metrics.noResponseRate > 25) {
+      actions.push("Estabelecer prazo limite de 48h para confirmação")
+      actions.push("Escalar casos críticos para gerência regional")
+      actions.push("Implementar suporte presencial para lojas com dificuldades")
+    } else if (metrics.completionRate > 80) {
+      actions.push("Agendar desativação do sistema antigo")
+      actions.push("Preparar comunicado oficial de encerramento")
+      actions.push("Documentar lições aprendidas do rollout")
+    } else {
+      actions.push("Intensificar follow-up com lojas pendentes")
+      actions.push("Revisar cronograma e recursos necessários")
+    }
+  } else if (isTesting) {
+    if (metrics.errorRate > 10) {
+      actions.push("PAUSAR novos testes imediatamente")
+      actions.push("Convocar equipe técnica para correção urgente")
+      actions.push("Revisar configurações de integração VS-PDV")
+    } else if (metrics.noResponseRate > 40) {
+      actions.push("Implementar follow-up automático diário")
+      actions.push("Criar canal direto com restaurantes")
+    } else {
+      actions.push("Manter ritmo atual de testes")
+      actions.push("Otimizar casos pendentes")
+    }
+  }
+
+  return actions.slice(0, 4)
+}
+
+function determineExecutiveTrend(metrics: any, isRollout: boolean): "improving" | "declining" | "stable" {
+  if (isRollout) {
+    if (metrics.completionRate > 75 && metrics.noResponseRate < 20) return "improving"
+    if (metrics.completionRate < 50 || metrics.noResponseRate > 35) return "declining"
+  } else {
+    if (metrics.completionRate > 70 && metrics.errorRate < 5) return "improving"
+    if (metrics.errorRate > 15 || metrics.noResponseRate > 45) return "declining"
   }
   return "stable"
 }
 
-function estimateContextualCompletion(
-  completed: number,
-  total: number,
-  inProgress: number,
-  isRollout: boolean,
-  isTesting: boolean,
-): string {
-  if (total === 0) return "Não é possível estimar"
+function generateExecutiveBenchmark(metrics: any, isRollout: boolean, isTesting: boolean): string {
+  const score = calculateExecutiveScore(metrics, isRollout)
+  const type = isRollout ? "rollouts corporativos" : "projetos de integração"
 
-  const remaining = total - completed
-
-  if (remaining <= 0) return "Concluído"
-
-  if (isRollout) {
-    // Rollout tem prazo definido
-    const dailyRate = Math.max(2, Math.floor(completed / 10)) // Assumindo 10 dias de trabalho
-    const daysRemaining = Math.ceil(remaining / dailyRate)
-
-    if (daysRemaining <= 5) return `${daysRemaining} dias`
-    if (daysRemaining <= 21) return `${Math.ceil(daysRemaining / 7)} semanas`
-    return `${Math.ceil(daysRemaining / 30)} meses`
-  } else if (isTesting) {
-    // Testes são contínuos
-    return "Processo contínuo - novos testes sempre chegando"
-  }
-
-  return "Estimativa não disponível"
-}
-
-function determineContextualRisk(
-  errorRate: number,
-  noResponseRate: number,
-  completionRate: number,
-  isRollout: boolean,
-): "low" | "medium" | "high" {
-  if (isRollout) {
-    if (noResponseRate > 40 || completionRate < 30) return "high"
-    if (noResponseRate > 20 || completionRate < 60) return "medium"
-    return "low"
-  } else {
-    if (errorRate > 15 || noResponseRate > 50) return "high"
-    if (errorRate > 8 || noResponseRate > 30) return "medium"
-    return "low"
-  }
-}
-
-function generateContextualActions(
-  data: DashboardData,
-  isRollout: boolean,
-  isTesting: boolean,
-  errorRate: number,
-  noResponseRate: number,
-  completionRate: number,
-): string[] {
-  const actions: string[] = []
-
-  if (isRollout) {
-    if (noResponseRate > 30) {
-      actions.push("URGENTE: Contatar todas as lojas sem confirmação")
-      actions.push("Estabelecer prazo limite para migração")
-      actions.push("Preparar suporte intensivo para lojas com dificuldades")
-    }
-
-    if (completionRate > 80) {
-      actions.push("Focar nas últimas lojas pendentes")
-      actions.push("Preparar cronograma de desativação do sistema antigo")
-      actions.push("Documentar lições aprendidas do rollout")
-    } else if (completionRate < 50) {
-      actions.push("Intensificar comunicação com lojas pendentes")
-      actions.push("Aumentar equipe de suporte para migração")
-      actions.push("Revisar processo de migração para otimizar")
-    }
-
-    actions.push("Monitorar lojas migradas para garantir estabilidade")
-  } else if (isTesting) {
-    if (errorRate > 10) {
-      actions.push("CRÍTICO: Pausar novos testes até corrigir erros")
-      actions.push("Investigar problemas de integração VS-PDV")
-      actions.push("Revisar configurações de conectividade")
-    }
-
-    if (noResponseRate > 40) {
-      actions.push("Implementar follow-up automático com restaurantes")
-      actions.push("Melhorar canais de comunicação (WhatsApp, telefone)")
-      actions.push("Criar guia de teste para restaurantes")
-    }
-
-    if (errorRate < 5 && completionRate > 70) {
-      actions.push("Manter padrão de qualidade atual")
-      actions.push("Documentar configurações bem-sucedidas")
-      actions.push("Otimizar processo para novos testes")
-    }
-
-    actions.push("Continuar monitoramento contínuo de qualidade")
-  }
-
-  return actions.slice(0, 6)
-}
-
-function generateContextualBenchmark(score: number, isRollout: boolean, isTesting: boolean): string {
-  const processType = isRollout ? "rollouts de migração" : "projetos de testes de integração"
-
-  if (score >= 85) {
-    return `Excelente! Performance no top 10% dos ${processType}`
-  } else if (score >= 70) {
-    return `Bom desempenho, acima da média dos ${processType}`
-  } else if (score >= 50) {
-    return `Performance mediana comparado a ${processType} similares`
-  } else if (score >= 30) {
-    return `Abaixo da média, requer melhorias urgentes`
-  } else {
-    return `Performance crítica, necessita intervenção imediata`
-  }
-}
-
-function generateFallbackAnalysis(data: DashboardData) {
-  const total = data.totalRecords
-  const completed = (data.statusCounts["Concluído"] || 0) + (data.statusCounts["Concluido"] || 0)
-  const completionRate = total > 0 ? (completed / total) * 100 : 0
-  const isRollout = data.dashboardType === "rollout"
-
-  return {
-    summary: `📊 Análise de Emergência: ${completed} de ${total} ${isRollout ? "lojas migradas" : "testes concluídos"} (${completionRate.toFixed(1)}%). Sistema funcionando com análise local.`,
-    insights: [
-      {
-        type: "info",
-        title: "Análise Básica Ativa",
-        message: "Sistema funcionando com análise local contextual",
-        recommendation: "Aguardar reconexão com sistema de IA",
-        confidence: 80,
-        priority: "low",
-      },
-    ],
-    predictions: {
-      completionTimeEstimate: isRollout ? "Estimativa indisponível" : "Processo contínuo",
-      riskLevel: "medium" as const,
-      nextActions: ["Continuar monitoramento", "Aguardar reconexão com IA"],
-    },
-    performance: {
-      score: Math.round(completionRate),
-      trend: "stable" as const,
-      benchmarkComparison: "Análise básica ativa",
-    },
-    timestamp: Date.now(),
-    dataHash: `fallback-${Date.now()}`,
-  }
+  if (score >= 85) return `Excelente - Top 10% dos ${type}`
+  if (score >= 70) return `Bom - Acima da média dos ${type}`
+  if (score >= 50) return `Adequado - Dentro da média`
+  if (score >= 30) return `Abaixo da média - Requer ação`
+  return `Crítico - Intervenção urgente necessária`
 }
 
 function cleanupCache() {
@@ -609,5 +429,5 @@ function cleanupCache() {
 export async function DELETE() {
   analysisCache.clear()
   statusHashCache.clear()
-  return NextResponse.json({ success: true, message: "Cache limpo" })
+  return NextResponse.json({ success: true, message: "Cache executivo limpo" })
 }
