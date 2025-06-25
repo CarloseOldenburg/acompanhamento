@@ -41,6 +41,7 @@ import {
 import type { DashboardData } from "../types"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
+import { AIInsightsPanel } from "./ai-insights-panel"
 
 interface ExecutiveDashboardProps {
   data: DashboardData
@@ -555,6 +556,9 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
               )
             })}
         </div>
+
+        {/* AI Insights Panel */}
+        <AIInsightsPanel data={data} isExecutive={true} />
 
         {/* Gráficos Principais */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

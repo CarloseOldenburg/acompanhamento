@@ -19,6 +19,7 @@ import {
 import type { DashboardData } from "../types"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
+import { AIInsightsPanel } from "./ai-insights-panel"
 
 interface EnhancedDashboardProps {
   data: DashboardData
@@ -444,6 +445,9 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
               </Card>
             ))}
         </div>
+
+        {/* AI Insights Panel */}
+        <AIInsightsPanel data={data} />
 
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
