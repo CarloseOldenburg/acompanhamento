@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { BarChart3, Settings, Share2 } from "lucide-react"
+import { BarChart3, Settings, Share2, Crown } from "lucide-react"
 import { EnhancedSpreadsheetTable } from "../components/enhanced-spreadsheet-table"
 import { EnhancedDashboard } from "../components/enhanced-dashboard"
+import { ExecutiveDashboard } from "../components/executive-dashboard"
 import { HeroSection } from "../components/hero-section"
 import { ClientOnly } from "../components/client-only"
 import { useOptimizedData } from "../hooks/useOptimizedData"
@@ -14,15 +15,13 @@ import { Footer } from "../components/footer"
 import type { DashboardData } from "../types"
 import Link from "next/link"
 import { toast } from "sonner"
-import { updateTabAction, deleteTabAction } from "./actions"
 import { TabManager } from "../components/tab-manager"
 
 export default function AcompanhamentoApp() {
   const { tabs, loading, refreshData } = useOptimizedData()
   const [activeTab, setActiveTab] = useState("")
   const [showDashboard, setShowDashboard] = useState<string | null>(null)
-  const [editingTabName, setEditingTabName] = useState<string | null>(null)
-  const [tempTabName, setTempTabName] = useState("")
+  const [dashboardType, setDashboardType] = useState<"enhanced" | "executive">("enhanced")
 
   // Set active tab when tabs are loaded
   useEffect(() => {
@@ -57,11 +56,12 @@ export default function AcompanhamentoApp() {
       statusCounts,
       totalRecords: tabData.rows.length,
       recentActivity: tabData.rows,
-      dashboardType: tabData.dashboardType || "rollout", // Incluir tipo de dashboard
+      dashboardType: tabData.dashboardType || "rollout",
     }
   }
 
-  const openDashboard = (tabId: string) => {
+  const openDashboard = (tabId: string, type: "enhanced" | "executive" = "enhanced") => {
+    setDashboardType(type)
     setShowDashboard(tabId)
   }
 
@@ -73,54 +73,6 @@ export default function AcompanhamentoApp() {
     const shareUrl = `${window.location.origin}/share/${tabId}`
     navigator.clipboard.writeText(shareUrl)
     toast.success("Link de compartilhamento copiado!")
-  }
-
-  const startEditTabName = () => {
-    if (currentTab) {
-      setTempTabName(currentTab.name)
-      setEditingTabName(currentTab.id)
-    }
-  }
-
-  const updateTabName = async (newName: string) => {
-    if (newName.trim() && newName !== currentTab?.name && currentTab) {
-      try {
-        const result = await updateTabAction({
-          id: currentTab.id,
-          name: newName.trim(),
-          columns: currentTab.columns,
-          dashboardType: currentTab.dashboardType,
-        })
-        if (result.success) {
-          toast.success("Nome da aba atualizado!")
-          refreshData()
-        } else {
-          toast.error("Erro ao atualizar nome da aba")
-        }
-      } catch (error) {
-        toast.error("Erro ao atualizar nome da aba")
-      }
-    }
-    setEditingTabName(null)
-  }
-
-  const deleteTab = async (tabId: string) => {
-    if (tabs.length > 1) {
-      try {
-        const result = await deleteTabAction(tabId)
-        if (result.success) {
-          toast.success("Aba removida com sucesso!")
-          if (activeTab === tabId) {
-            setActiveTab(tabs.filter((t) => t.id !== tabId)[0].id)
-          }
-          refreshData()
-        } else {
-          toast.error("Erro ao remover aba")
-        }
-      } catch (error) {
-        toast.error("Erro ao remover aba")
-      }
-    }
   }
 
   if (loading && tabs.length === 0) {
@@ -141,7 +93,11 @@ export default function AcompanhamentoApp() {
       return (
         <div className="min-h-screen flex flex-col">
           <div className="flex-1">
-            <EnhancedDashboard data={dashboardData} onBack={closeDashboard} />
+            {dashboardType === "executive" ? (
+              <ExecutiveDashboard data={dashboardData} onBack={closeDashboard} />
+            ) : (
+              <EnhancedDashboard data={dashboardData} onBack={closeDashboard} />
+            )}
           </div>
           <Footer />
         </div>
@@ -236,7 +192,15 @@ export default function AcompanhamentoApp() {
                         </Button>
                       </Link>
                       <Button
-                        onClick={() => openDashboard(activeTab)}
+                        onClick={() => openDashboard(activeTab, "executive")}
+                        className="h-9 px-3 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 group"
+                        disabled={!activeTab}
+                      >
+                        <Crown className="w-4 h-4 mr-1 group-hover:scale-110 transition-transform" />
+                        Executivo
+                      </Button>
+                      <Button
+                        onClick={() => openDashboard(activeTab, "enhanced")}
                         className="h-9 px-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 group"
                         disabled={!activeTab}
                       >
@@ -246,7 +210,7 @@ export default function AcompanhamentoApp() {
                     </div>
                   </div>
 
-                  {/* Tab Management Section - SEM showActions */}
+                  {/* Tab Management Section */}
                   <TabManager
                     tabs={tabs}
                     onUpdateTabs={refreshData}

@@ -12,19 +12,26 @@ export function useOptimizedData() {
   const refreshData = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await getTabsAction()
+      const result = await getTabsAction()
 
-      // Garantir que data é um array
-      if (Array.isArray(data)) {
-        setTabs(data)
+      console.log("🔄 useOptimizedData - resultado:", result)
+
+      // Verificar se o resultado tem o formato correto
+      if (result && result.success && Array.isArray(result.tabs)) {
+        console.log("✅ useOptimizedData - tabs encontradas:", result.tabs.length)
+        setTabs(result.tabs)
+      } else if (Array.isArray(result)) {
+        // Fallback para formato antigo (array direto)
+        console.log("✅ useOptimizedData - formato antigo, tabs:", result.length)
+        setTabs(result)
       } else {
-        console.error("getTabsAction did not return an array:", data)
+        console.error("❌ useOptimizedData - formato inválido:", result)
         setTabs([])
       }
 
       setLastUpdate(new Date())
     } catch (error) {
-      console.error("Error fetching data:", error)
+      console.error("💥 useOptimizedData - erro:", error)
       setTabs([])
     } finally {
       setLoading(false)

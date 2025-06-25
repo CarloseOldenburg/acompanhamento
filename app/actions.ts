@@ -6,10 +6,12 @@ import type { TabData, TableRow } from "../types"
 
 export async function getTabsAction() {
   try {
-    return await db.getTabs()
+    const tabs = await db.getTabs()
+    console.log("📊 getTabsAction - tabs encontradas:", tabs.length)
+    return { success: true, tabs }
   } catch (error) {
     console.error("Error in getTabsAction:", error)
-    return []
+    return { success: false, tabs: [], error: error.message }
   }
 }
 

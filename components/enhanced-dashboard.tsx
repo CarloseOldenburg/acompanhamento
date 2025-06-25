@@ -56,6 +56,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
         name: storeName,
         status: status,
         originalIndex: index,
+        fullData: row,
       })
     })
 
@@ -70,6 +71,8 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
       {} as { [key: string]: any[] },
     )
 
+    console.log("Lojas processadas:", storeArray.length)
+    console.log("Primeiras 3 lojas:", storeArray.slice(0, 3))
     console.log("=== FIM DO CÁLCULO ROLLOUT ===")
     return { stores: storeArray, statusGroups }
   }, [data.recentActivity, dashboardType])
@@ -82,16 +85,17 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     const testArray: any[] = []
 
     data.recentActivity.forEach((row, index) => {
-      // CORRIGIR: Buscar nome real do PDV/teste
+      // Buscar nome real do PDV/teste com prioridade
       const testName =
-        row.pdv ||
+        row.nome_do_restaurante || // Nome do restaurante tem prioridade
+        row.pdv_integradora || // Depois PDV/Integradora
         row.terminal ||
         row.equipamento ||
         row.nome_pdv ||
         row.nome_teste ||
         row.teste ||
-        row.loja || // Fallback para loja se for o nome do PDV
-        `PDV ${index + 1}`
+        row.loja ||
+        `Teste ${index + 1}`
 
       const status = row.status || "Sem Status"
       const testType = row.tipo_teste || row.categoria || row.tipo || "PDV"
@@ -101,6 +105,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
         status: status,
         type: testType,
         originalIndex: index,
+        fullData: row,
       })
     })
 
@@ -476,39 +481,82 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
             </div>
 
             {/* Lista de Items */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {currentItems.slice(0, 12).map((item, index) => (
-                <div
-                  key={index}
-                  className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={item.name}>
-                      {item.name}
-                    </h4>
-                    <div
-                      className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(item.status)}`}
-                    >
-                      {getStatusIcon(item.status)}
-                      <span>{item.status}</span>
-                    </div>
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {isRollout
-                      ? `Sistema: ${item.status === "Concluído" || item.status === "Concluido" ? "Novo" : "Antigo"}`
-                      : `Tipo: ${item.type || "PDV"}`}
-                  </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-lg font-semibold text-slate-900">
+                  {isRollout ? "Lojas no Rollout" : "Testes de Integração"}
+                </h4>
+                <div className="text-sm text-slate-600">
+                  Mostrando {Math.min(currentItems.length, 12)} de {currentItems.length}{" "}
+                  {isRollout ? "lojas" : "testes"}
                 </div>
-              ))}
-            </div>
-            {currentItems.length > 12 && (
-              <div className="mt-4 text-center">
-                <p className="text-sm text-gray-500">
-                  Mostrando 12 de {currentItems.length} {isRollout ? "lojas" : "testes"}. Use a exportação para ver
-                  todos os dados.
-                </p>
               </div>
-            )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {currentItems.slice(0, 12).map((item, index) => (
+                  <div
+                    key={index}
+                    className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={item.name}>
+                        {item.name}
+                      </h4>
+                      <div
+                        className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(item.status)}`}
+                      >
+                        {getStatusIcon(item.status)}
+                        <span>{item.status}</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 space-y-1">
+                      {isRollout ? (
+                        <>
+                          <div>
+                            Sistema: {item.status === "Concluído" || item.status === "Concluido" ? "Novo" : "Antigo"}
+                          </div>
+                          {item.fullData?.data_de_agendamento && (
+                            <div>Agendado: {item.fullData.data_de_agendamento}</div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div>PDV: {item.fullData?.pdv_integradora || "N/A"}</div>
+                          <div>Solicitante: {item.fullData?.solicitante || "N/A"}</div>
+                          {item.fullData?.carimbo_de_data_hora && <div>Data: {item.fullData.carimbo_de_data_hora}</div>}
+                        </>
+                      )}
+                    </div>
+                    {item.fullData?.observacao && (
+                      <div className="mt-2 text-xs text-gray-600 line-clamp-2">
+                        {item.fullData.observacao.length > 100
+                          ? `${item.fullData.observacao.substring(0, 100)}...`
+                          : item.fullData.observacao}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {currentItems.length > 12 && (
+                <div className="mt-4 text-center">
+                  <p className="text-sm text-gray-500">
+                    Mostrando 12 de {currentItems.length} {isRollout ? "lojas" : "testes"}. Use a exportação para ver
+                    todos os dados.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mt-2"
+                    onClick={() => {
+                      // Expandir para mostrar mais itens
+                      toast.info("Use a exportação para ver todos os dados detalhados")
+                    }}
+                  >
+                    Ver Mais Detalhes na Exportação
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

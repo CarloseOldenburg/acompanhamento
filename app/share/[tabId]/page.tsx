@@ -37,14 +37,14 @@ export default function SharedDashboard() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      console.log("🔍 Buscando tab com ID:", tabId)
+      console.log("🔍 SharedDashboard - Buscando tab com ID:", tabId)
 
       const result = await getTabsAction()
-      console.log("📊 Resultado da busca:", result)
+      console.log("📊 SharedDashboard - Resultado completo:", result)
 
-      if (result.success && result.tabs) {
+      if (result && result.success && result.tabs && Array.isArray(result.tabs)) {
         console.log(
-          "📋 Tabs disponíveis:",
+          "📋 SharedDashboard - Tabs disponíveis:",
           result.tabs.map((t) => ({ id: t.id, name: t.name })),
         )
 
@@ -77,12 +77,12 @@ export default function SharedDashboard() {
         }
 
         if (tab) {
-          console.log("✅ Tab encontrada:", { id: tab.id, name: tab.name, type: tab.dashboardType })
+          console.log("✅ SharedDashboard - Tab encontrada:", { id: tab.id, name: tab.name, type: tab.dashboardType })
           setTabData(tab)
           setLastUpdate(new Date())
           setDebugInfo(null)
         } else {
-          console.log("❌ Tab não encontrada")
+          console.log("❌ SharedDashboard - Tab não encontrada")
           setDebugInfo({
             searchedId: tabId,
             availableTabs: result.tabs.map((t) => ({ id: t.id, name: t.name })),
@@ -90,12 +90,20 @@ export default function SharedDashboard() {
           })
         }
       } else {
-        console.log("❌ Erro ao buscar tabs:", result)
-        setDebugInfo({ error: "Falha ao carregar dados", result })
+        console.log("❌ SharedDashboard - Formato de resposta inválido:", result)
+        setDebugInfo({
+          error: "Formato de dados inválido",
+          result,
+          searchedId: tabId,
+        })
       }
     } catch (error) {
-      console.error("💥 Erro na busca:", error)
-      setDebugInfo({ error: "Erro de conexão", details: error })
+      console.error("💥 SharedDashboard - Erro na busca:", error)
+      setDebugInfo({
+        error: "Erro de conexão",
+        details: error.message,
+        searchedId: tabId,
+      })
     } finally {
       setLoading(false)
     }
@@ -199,26 +207,28 @@ export default function SharedDashboard() {
                 <div className="bg-gray-50 p-4 rounded-lg text-left text-sm">
                   <h3 className="font-semibold mb-2">Informações de Debug:</h3>
                   <p>
-                    <strong>ID Procurado:</strong> {debugInfo.searchedId}
+                    <strong>ID Procurado:</strong> {debugInfo.searchedId || "N/A"}
                   </p>
                   {debugInfo.availableTabs && (
                     <div className="mt-2">
                       <strong>Dashboards Disponíveis ({debugInfo.totalTabs}):</strong>
-                      <ul className="mt-1 space-y-1">
-                        {debugInfo.availableTabs.slice(0, 10).map((tab, index) => (
+                      <ul className="mt-1 space-y-1 max-h-40 overflow-y-auto">
+                        {debugInfo.availableTabs.map((tab, index) => (
                           <li key={index} className="text-xs">
-                            • ID: {tab.id} | Nome: {tab.name}
+                            • ID: <span className="font-mono">{tab.id}</span> | Nome: {tab.name}
                           </li>
                         ))}
-                        {debugInfo.totalTabs > 10 && (
-                          <li className="text-xs text-gray-500">... e mais {debugInfo.totalTabs - 10} dashboards</li>
-                        )}
                       </ul>
                     </div>
                   )}
                   {debugInfo.error && (
                     <p className="text-red-600 mt-2">
                       <strong>Erro:</strong> {debugInfo.error}
+                    </p>
+                  )}
+                  {debugInfo.details && (
+                    <p className="text-red-600 mt-1">
+                      <strong>Detalhes:</strong> {debugInfo.details}
                     </p>
                   )}
                 </div>
@@ -576,13 +586,14 @@ export default function SharedDashboard() {
                       row.nome_teste ||
                       row.teste ||
                       row.loja ||
+                      row.nome_do_restaurante ||
                       `PDV ${index + 1}`
 
                   const itemType = isRollout
                     ? row.status === "Concluído" || row.status === "Concluido"
                       ? "Novo"
                       : "Antigo"
-                    : row.tipo_teste || row.categoria || row.tipo || "PDV"
+                    : row.tipo_teste || row.categoria || row.tipo || row.pdv_integradora || "PDV"
 
                   return (
                     <div
