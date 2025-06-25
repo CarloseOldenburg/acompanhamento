@@ -35,9 +35,6 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
     width: 150,
   })
 
-  // Debounce para salvar mudanças após um tempo sem edição
-  const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null)
-
   // Get status column for bulk operations
   const statusColumn = tabData.columns.find((col) => col.key === "status" || col.label.toLowerCase().includes("status"))
 
@@ -118,33 +115,17 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
   }, [unsavedChanges, tabData, onRefresh])
 
   const updateCell = (rowId: string, columnKey: string, value: any) => {
-    // Atualiza o estado local imediatamente
+    // Atualiza o estado local imediatamente (APENAS VISUAL - SEM AUTO-SAVE)
     setUnsavedChanges((prev) => {
       const newChanges = new Map(prev)
       const rowChanges = newChanges.get(rowId) || {}
       newChanges.set(rowId, { ...rowChanges, [columnKey]: value })
       return newChanges
     })
-
-    // Cancela o timeout anterior e cria um novo
-    if (saveTimeout) {
-      clearTimeout(saveTimeout)
-    }
-
-    // Salva após 2 segundos de inatividade
-    const newTimeout = setTimeout(() => {
-      saveChanges()
-    }, 2000)
-
-    setSaveTimeout(newTimeout)
   }
 
   // Função para salvar manualmente
   const handleManualSave = () => {
-    if (saveTimeout) {
-      clearTimeout(saveTimeout)
-      setSaveTimeout(null)
-    }
     saveChanges()
   }
 
@@ -282,6 +263,23 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
         toast.error("Erro ao salvar colunas")
       }
     })
+  }
+
+  // Função para determinar a cor da linha baseada no status
+  const getRowStatusColor = (row: any) => {
+    if (!statusColumn) return ""
+
+    const status = row[statusColumn.key]?.toLowerCase()
+
+    if (status?.includes("conclu") || status?.includes("finaliz")) {
+      return "bg-green-50 border-l-4 border-green-400"
+    } else if (status?.includes("pendente")) {
+      return "bg-yellow-50 border-l-4 border-yellow-400"
+    } else if (status?.includes("agend")) {
+      return "bg-blue-50 border-l-4 border-blue-400"
+    }
+
+    return ""
   }
 
   return (
@@ -430,6 +428,7 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
               const hasUnsavedChanges = unsavedChanges.has(row.id)
               const rowChanges = unsavedChanges.get(row.id) || {}
               const isSelected = selectedRows.has(row.id)
+              const statusColorClass = getRowStatusColor(row)
 
               return (
                 <TableRow
@@ -439,6 +438,7 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
                     ${pendingChanges.has(row.id) ? "bg-blue-50" : ""}
                     ${hasUnsavedChanges ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}
                     ${isSelected ? "bg-blue-100 border-l-4 border-blue-500" : ""}
+                    ${statusColorClass}
                     hover:bg-blue-50/50 hover:scale-[1.01] transition-all duration-200
                   `}
                 >
@@ -707,16 +707,6 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Indicador de auto-save */}
-      {saveTimeout && (
-        <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg animate-bounce">
-          <div className="flex items-center space-x-2">
-            <LoadingSpinner size="sm" />
-            <span className="text-sm">Salvando em 2s...</span>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

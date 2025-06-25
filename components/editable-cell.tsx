@@ -40,10 +40,9 @@ export function EditableCell({ value, column, onSave }: EditableCellProps) {
   }, [isEditing])
 
   const handleSave = () => {
-    // Só salva se o valor realmente mudou
-    if (editValue !== originalValue) {
-      onSave(editValue)
-    }
+    // Sempre salva o valor atual (mesmo que seja igual ao original)
+    onSave(editValue)
+    setOriginalValue(editValue) // Atualiza o valor original
     setIsEditing(false)
   }
 
@@ -62,10 +61,9 @@ export function EditableCell({ value, column, onSave }: EditableCellProps) {
   }
 
   const handleSelectChange = (newValue: string) => {
-    // Para selects, só salva se o valor mudou
-    if (newValue !== originalValue) {
-      onSave(newValue)
-    }
+    // Para selects, sempre salva o novo valor
+    onSave(newValue)
+    setOriginalValue(newValue) // Atualiza o valor original
   }
 
   if (column.type === "select") {
