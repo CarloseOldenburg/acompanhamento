@@ -301,9 +301,9 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
     } else if (status?.includes("agend")) {
       return "bg-blue-50 border-l-4 border-blue-500"
     } else if (status?.includes("erro")) {
-      return "bg-red-50 border-l-4 border-red-500"
+      return "bg-red-50 border-l-4 border-red-600"
     } else if (status?.includes("sem retorno")) {
-      return "bg-orange-50 border-l-4 border-orange-500"
+      return "bg-purple-50 border-l-4 border-purple-500"
     }
 
     return ""

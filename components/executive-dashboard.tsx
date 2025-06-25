@@ -36,6 +36,7 @@ import {
   ChevronUp,
   BarChart3,
   PieChartIcon,
+  XCircle,
 } from "lucide-react"
 import type { DashboardData } from "../types"
 import { useMemo, useState } from "react"
@@ -52,6 +53,7 @@ const COLORS = {
   danger: "#ef4444",
   info: "#3b82f6",
   neutral: "#6b7280",
+  purple: "#8b5cf6",
 }
 
 const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
@@ -66,7 +68,7 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
   const dashboardType = data.dashboardType || "rollout"
   const isRollout = dashboardType === "rollout"
 
-  // KPIs Executivos Calculados
+  // KPIs Executivos Calculados - CORRIGIDO PARA INCLUIR NOVOS STATUS
   const executiveKPIs = useMemo(() => {
     const total = data.totalRecords
     const statusEntries = Object.entries(data.statusCounts)
@@ -75,19 +77,29 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
       data.statusCounts["Concluído"] || data.statusCounts["Concluido"] || data.statusCounts["Aprovado"] || 0
     const pending = data.statusCounts["Pendente"] || data.statusCounts["Aguardando"] || 0
     const inProgress = data.statusCounts["Agendado"] || data.statusCounts["Em Andamento"] || 0
-    const failed = data.statusCounts["Falhou"] || data.statusCounts["Reprovado"] || 0
+    const failed = data.statusCounts["Falhou"] || data.statusCounts["Reprovado"] || data.statusCounts["Erro"] || 0
+    const noResponse = data.statusCounts["Sem retorno"] || data.statusCounts["Sem Retorno"] || 0
 
     const completionRate = total > 0 ? (completed / total) * 100 : 0
-    const pendingRate = total > 0 ? (pending / total) * 100 : 0
+    const pendingRate = total > 0 ? ((pending + noResponse) / total) * 100 : 0
     const failureRate = total > 0 ? (failed / total) * 100 : 0
+    const performanceRate = total > 0 ? ((completed + inProgress) / total) * 100 : 0
 
-    // Simular dados de tendência (últimos 7 dias)
-    const trendData = Array.from({ length: 7 }, (_, i) => ({
-      day: `Dia ${i + 1}`,
-      completed: Math.floor(Math.random() * 20) + completed - 10,
-      pending: Math.floor(Math.random() * 15) + pending - 5,
-      total: Math.floor(Math.random() * 30) + total - 15,
-    }))
+    // Simular dados de tendência (últimos 7 dias) - DADOS MAIS REALISTAS
+    const trendData = Array.from({ length: 7 }, (_, i) => {
+      const dayProgress = (i + 1) / 7 // progresso do dia (0.14 a 1.0)
+      const baseCompleted = Math.floor(completed * dayProgress)
+      const basePending = Math.floor(pending * (1 - dayProgress * 0.5))
+      const baseFailed = Math.floor(failed * dayProgress * 0.3)
+
+      return {
+        day: `Dia ${i + 1}`,
+        completed: Math.max(0, baseCompleted + Math.floor(Math.random() * 5 - 2)),
+        pending: Math.max(0, basePending + Math.floor(Math.random() * 3 - 1)),
+        failed: Math.max(0, baseFailed + Math.floor(Math.random() * 2)),
+        total: Math.max(0, total - Math.floor(Math.random() * 5)),
+      }
+    })
 
     return {
       totalItems: {
@@ -109,25 +121,25 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
         details: `${completed} de ${total} concluídos`,
       },
       pendingItems: {
-        value: pending,
+        value: pending + noResponse,
         label: "Itens Pendentes",
         trend: "-5.2%",
         trendUp: false,
         icon: Clock,
         color: pendingRate > 30 ? COLORS.danger : pendingRate > 15 ? COLORS.warning : COLORS.success,
-        details: `${pendingRate.toFixed(1)}% do total`,
+        details: `${pendingRate.toFixed(1)}% do total (${pending} pendentes + ${noResponse} sem retorno)`,
       },
       performance: {
-        value: Math.round(100 - failureRate),
+        value: Math.round(performanceRate),
         label: "Performance Geral",
         trend: "+3.1%",
         trendUp: true,
         icon: Target,
         color: failureRate < 5 ? COLORS.success : failureRate < 15 ? COLORS.warning : COLORS.danger,
-        details: `${failureRate.toFixed(1)}% de falhas`,
+        details: `${failureRate.toFixed(1)}% de falhas, ${failed} erros registrados`,
       },
       productivity: {
-        value: Math.round(((completed + inProgress) / total) * 100),
+        value: Math.round(performanceRate),
         label: "Produtividade",
         trend: "+15.3%",
         trendUp: true,
@@ -141,12 +153,47 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
 
   // Dados para gráficos
   const chartData = useMemo(() => {
-    const statusData = Object.entries(data.statusCounts).map(([status, count], index) => ({
-      status,
-      count,
-      color: CHART_COLORS[index % CHART_COLORS.length],
-      percentage: ((count / data.totalRecords) * 100).toFixed(1),
-    }))
+    const statusData = Object.entries(data.statusCounts).map(([status, count], index) => {
+      // Definir cor específica baseada no status
+      let statusColor = CHART_COLORS[index % CHART_COLORS.length] // fallback
+
+      switch (status.toLowerCase()) {
+        case "concluído":
+        case "concluido":
+        case "aprovado":
+        case "passou":
+          statusColor = "#10b981" // verde
+          break
+        case "pendente":
+        case "aguardando":
+        case "não testado":
+          statusColor = "#f59e0b" // amarelo
+          break
+        case "agendado":
+        case "executando":
+        case "testando":
+          statusColor = "#3b82f6" // azul
+          break
+        case "em andamento":
+          statusColor = "#8b5cf6" // roxo
+          break
+        case "erro":
+          statusColor = "#ef4444" // vermelho
+          break
+        case "sem retorno":
+          statusColor = "#8b5cf6" // roxo
+          break
+        default:
+          statusColor = "#6b7280" // cinza
+      }
+
+      return {
+        status,
+        count,
+        color: statusColor,
+        percentage: ((count / data.totalRecords) * 100).toFixed(1),
+      }
+    })
 
     return {
       statusData,
@@ -159,11 +206,13 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
     }
   }, [data, executiveKPIs])
 
-  // Alertas Críticos
+  // Alertas Críticos - ATUALIZADO PARA INCLUIR NOVOS STATUS
   const criticalAlerts = useMemo(() => {
     const alerts = []
     const completionRate = executiveKPIs.completionRate.value
     const pendingRate = (executiveKPIs.pendingItems.value / data.totalRecords) * 100
+    const errorCount = data.statusCounts["Erro"] || 0
+    const noResponseCount = data.statusCounts["Sem retorno"] || data.statusCounts["Sem Retorno"] || 0
 
     if (completionRate < 50) {
       alerts.push({
@@ -171,6 +220,24 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
         title: "Taxa de Conclusão Baixa",
         message: `Apenas ${completionRate.toFixed(1)}% concluído`,
         action: "Revisar processos",
+      })
+    }
+
+    if (errorCount > 0) {
+      alerts.push({
+        type: "danger",
+        title: "Erros Detectados",
+        message: `${errorCount} erro(s) registrado(s)`,
+        action: "Investigar falhas imediatamente",
+      })
+    }
+
+    if (noResponseCount > 0) {
+      alerts.push({
+        type: "warning",
+        title: "Itens Sem Retorno",
+        message: `${noResponseCount} item(ns) sem resposta`,
+        action: "Verificar comunicação",
       })
     }
 
@@ -203,6 +270,8 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
           taxaConclusao: `${executiveKPIs.completionRate.value.toFixed(1)}%`,
           itensPendentes: executiveKPIs.pendingItems.value,
           performanceGeral: `${executiveKPIs.performance.value}%`,
+          erros: data.statusCounts["Erro"] || 0,
+          semRetorno: data.statusCounts["Sem retorno"] || data.statusCounts["Sem Retorno"] || 0,
         },
         detalhes: data.recentActivity.map((row) => ({
           ...row,
@@ -216,6 +285,8 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
         `Taxa de Conclusão,${executiveKPIs.completionRate.value.toFixed(1)}%`,
         `Itens Pendentes,${executiveKPIs.pendingItems.value}`,
         `Performance Geral,${executiveKPIs.performance.value}%`,
+        `Erros,${data.statusCounts["Erro"] || 0}`,
+        `Sem Retorno,${data.statusCounts["Sem retorno"] || data.statusCounts["Sem Retorno"] || 0}`,
         "",
         "DETALHES POR STATUS",
         ...Object.entries(data.statusCounts).map(
@@ -241,6 +312,58 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
 
   const toggleKPIDetails = (kpiKey: string) => {
     setExpandedKPI(expandedKPI === kpiKey ? null : kpiKey)
+  }
+
+  // Função para obter cor do status - CORRIGIDA
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "concluído":
+      case "concluido":
+      case "aprovado":
+      case "passou":
+        return "bg-green-100 text-green-800 border-green-300"
+      case "pendente":
+      case "aguardando":
+      case "não testado":
+        return "bg-yellow-100 text-yellow-800 border-yellow-300"
+      case "agendado":
+      case "executando":
+      case "testando":
+        return "bg-blue-100 text-blue-800 border-blue-300"
+      case "em andamento":
+        return "bg-purple-100 text-purple-800 border-purple-300"
+      case "erro":
+        return "bg-red-100 text-red-800 border-red-300"
+      case "sem retorno":
+        return "bg-purple-100 text-purple-800 border-purple-300"
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-300"
+    }
+  }
+
+  // Função para obter ícone do status - CORRIGIDA
+  const getStatusIcon = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "concluído":
+      case "concluido":
+      case "aprovado":
+      case "passou":
+        return <CheckCircle className="w-4 h-4" />
+      case "pendente":
+      case "aguardando":
+      case "não testado":
+        return <Clock className="w-4 h-4" />
+      case "agendado":
+      case "executando":
+      case "testando":
+        return <Activity className="w-4 h-4" />
+      case "erro":
+        return <AlertTriangle className="w-4 h-4" />
+      case "sem retorno":
+        return <XCircle className="w-4 h-4" />
+      default:
+        return <TrendingUp className="w-4 h-4" />
+    }
   }
 
   return (
@@ -505,6 +628,14 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                     fill="#f59e0b"
                     fillOpacity={0.6}
                   />
+                  <Area
+                    type="monotone"
+                    dataKey="failed"
+                    stackId="1"
+                    stroke="#ef4444"
+                    fill="#ef4444"
+                    fillOpacity={0.6}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </CardContent>
@@ -530,17 +661,24 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                 <TabsContent value="overview" className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {Object.entries(data.statusCounts).map(([status, count]) => (
-                      <Card key={status} className="border border-slate-200">
+                      <Card key={status} className={`border ${getStatusColor(status)}`}>
                         <CardContent className="p-4">
                           <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-slate-600">{status}</p>
-                              <p className="text-2xl font-bold text-slate-900">{count}</p>
+                            <div className="flex items-center space-x-2">
+                              {getStatusIcon(status)}
+                              <div>
+                                <p className="text-sm font-medium">{status}</p>
+                                <p className="text-2xl font-bold">{count}</p>
+                              </div>
                             </div>
                             <div className="text-right">
-                              <p className="text-xs text-slate-500">
-                                {((count / data.totalRecords) * 100).toFixed(1)}%
-                              </p>
+                              <p className="text-xs">{((count / data.totalRecords) * 100).toFixed(1)}%</p>
+                              <div className="w-12 h-2 bg-gray-200 rounded-full mt-1">
+                                <div
+                                  className="h-2 bg-current rounded-full transition-all duration-500"
+                                  style={{ width: `${(count / data.totalRecords) * 100}%` }}
+                                />
+                              </div>
                             </div>
                           </div>
                         </CardContent>
@@ -554,20 +692,21 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                     {/* Resumo Detalhado */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       {Object.entries(data.statusCounts).map(([status, count]) => (
-                        <Card key={status} className="border border-slate-200">
+                        <Card key={status} className={`border ${getStatusColor(status)}`}>
                           <CardContent className="p-4">
                             <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-sm font-medium text-slate-600">{status}</p>
-                                <p className="text-2xl font-bold text-slate-900">{count}</p>
+                              <div className="flex items-center space-x-2">
+                                {getStatusIcon(status)}
+                                <div>
+                                  <p className="text-sm font-medium">{status}</p>
+                                  <p className="text-2xl font-bold">{count}</p>
+                                </div>
                               </div>
                               <div className="text-right">
-                                <p className="text-xs text-slate-500">
-                                  {((count / data.totalRecords) * 100).toFixed(1)}%
-                                </p>
-                                <div className="w-12 h-2 bg-slate-200 rounded-full mt-1">
+                                <p className="text-xs">{((count / data.totalRecords) * 100).toFixed(1)}%</p>
+                                <div className="w-12 h-2 bg-gray-200 rounded-full mt-1">
                                   <div
-                                    className="h-2 bg-blue-500 rounded-full transition-all duration-500"
+                                    className="h-2 bg-current rounded-full transition-all duration-500"
                                     style={{ width: `${(count / data.totalRecords) * 100}%` }}
                                   />
                                 </div>
@@ -638,18 +777,7 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                                     )}
                                   </div>
                                 </div>
-                                <Badge
-                                  variant={
-                                    item.status === "Concluído" || item.status === "Concluido"
-                                      ? "default"
-                                      : item.status === "Pendente"
-                                        ? "secondary"
-                                        : item.status === "Agendado"
-                                          ? "outline"
-                                          : "secondary"
-                                  }
-                                  className="ml-4"
-                                >
+                                <Badge className={`ml-4 ${getStatusColor(item.status || "Sem Status")}`}>
                                   {item.status || "Sem Status"}
                                 </Badge>
                               </div>
@@ -712,6 +840,18 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                                 <span>Alto volume de itens pendentes requer atenção</span>
                               </div>
                             )}
+                            {(data.statusCounts["Erro"] || 0) > 0 && (
+                              <div className="flex items-center space-x-2 text-sm text-red-700 bg-red-50 p-2 rounded">
+                                <AlertTriangle className="w-4 h-4" />
+                                <span>Erros detectados - investigação necessária</span>
+                              </div>
+                            )}
+                            {(data.statusCounts["Sem retorno"] || data.statusCounts["Sem Retorno"] || 0) > 0 && (
+                              <div className="flex items-center space-x-2 text-sm text-purple-700 bg-purple-50 p-2 rounded">
+                                <XCircle className="w-4 h-4" />
+                                <span>Itens sem retorno precisam de acompanhamento</span>
+                              </div>
+                            )}
                             <div className="flex items-center space-x-2 text-sm text-blue-700 bg-blue-50 p-2 rounded">
                               <TrendingUp className="w-4 h-4" />
                               <span>Tendência de crescimento identificada</span>
@@ -731,7 +871,7 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                           <AreaChart data={executiveKPIs.trendData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                             <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                            <YAxis tick={{ fontSize: 12 }} />
+                            <YAxis dataKey="total" tick={{ fontSize: 12 }} />
                             <Tooltip />
                             <Area
                               type="monotone"
@@ -749,6 +889,14 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                               fill="#f59e0b"
                               fillOpacity={0.6}
                             />
+                            <Area
+                              type="monotone"
+                              dataKey="failed"
+                              stackId="1"
+                              stroke="#ef4444"
+                              fill="#ef4444"
+                              fillOpacity={0.6}
+                            />
                           </AreaChart>
                         </ResponsiveContainer>
                       </CardContent>
@@ -760,7 +908,7 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                         <CardTitle className="text-lg font-semibold">Métricas Avançadas</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                           <div className="text-center">
                             <div className="text-2xl font-bold text-slate-900">{Math.round(data.totalRecords / 7)}</div>
                             <div className="text-sm text-slate-600">Média por Dia</div>
@@ -782,6 +930,10 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
                               {Math.round(executiveKPIs.performance.value)}%
                             </div>
                             <div className="text-sm text-slate-600">Eficiência</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-2xl font-bold text-red-900">{data.statusCounts["Erro"] || 0}</div>
+                            <div className="text-sm text-slate-600">Erros</div>
                           </div>
                         </div>
                       </CardContent>

@@ -4,7 +4,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
-import { ArrowLeft, Download, TrendingUp, Clock, CheckCircle, Store, TestTube, Zap, AlertCircle } from "lucide-react"
+import {
+  ArrowLeft,
+  Download,
+  TrendingUp,
+  Clock,
+  CheckCircle,
+  Store,
+  TestTube,
+  Zap,
+  AlertCircle,
+  XCircle,
+} from "lucide-react"
 import type { DashboardData } from "../types"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -33,11 +44,46 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
 
   const pieData = useMemo(
     () =>
-      Object.entries(data.statusCounts).map(([status, count], index) => ({
-        name: status,
-        value: count,
-        color: COLORS[index % COLORS.length],
-      })),
+      Object.entries(data.statusCounts).map(([status, count], index) => {
+        // Definir cor específica baseada no status
+        let statusColor = COLORS[index % COLORS.length] // fallback
+
+        switch (status.toLowerCase()) {
+          case "concluído":
+          case "concluido":
+          case "aprovado":
+          case "passou":
+            statusColor = "#10b981" // verde
+            break
+          case "pendente":
+          case "aguardando":
+          case "não testado":
+            statusColor = "#f59e0b" // amarelo
+            break
+          case "agendado":
+          case "executando":
+          case "testando":
+            statusColor = "#3b82f6" // azul
+            break
+          case "em andamento":
+            statusColor = "#8b5cf6" // roxo
+            break
+          case "erro":
+            statusColor = "#ef4444" // vermelho
+            break
+          case "sem retorno":
+            statusColor = "#8b5cf6" // roxo
+            break
+          default:
+            statusColor = "#6b7280" // cinza
+        }
+
+        return {
+          name: status,
+          value: count,
+          color: statusColor,
+        }
+      }),
     [data.statusCounts],
   )
 
@@ -126,7 +172,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     return { tests: testArray, statusGroups }
   }, [data.recentActivity, dashboardType])
 
-  // Calcular progresso baseado no tipo - AJUSTADO PARA TESTES
+  // Calcular progresso baseado no tipo - CORRIGIDO PARA INCLUIR NOVOS STATUS
   const progress = useMemo(() => {
     const isRollout = dashboardType === "rollout"
     const items = isRollout ? rolloutStats.stores : testingStats.tests
@@ -146,7 +192,12 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
       statusGroups["Agendado"]?.length ||
       0
     const pending =
-      statusGroups["Pendente"]?.length || statusGroups["Aguardando"]?.length || statusGroups["Não Testado"]?.length || 0
+      statusGroups["Pendente"]?.length ||
+      statusGroups["Aguardando"]?.length ||
+      statusGroups["Não Testado"]?.length ||
+      statusGroups["Sem retorno"]?.length ||
+      statusGroups["Sem Retorno"]?.length ||
+      0
     const failed =
       statusGroups["Falhou"]?.length || statusGroups["Reprovado"]?.length || statusGroups["Erro"]?.length || 0
 
@@ -181,12 +232,10 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
         return "text-blue-600 bg-blue-100"
       case "em andamento":
         return "text-purple-600 bg-purple-100"
-      case "falhou":
-      case "reprovado":
       case "erro":
-        return "text-red-600 bg-red-100"
+        return "text-red-700 bg-red-100 border-red-300"
       case "sem retorno":
-        return "text-orange-600 bg-orange-100"
+        return "text-purple-700 bg-purple-100 border-purple-300"
       default:
         return "text-gray-600 bg-gray-100"
     }
@@ -205,14 +254,11 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
         return <Clock className="w-4 h-4" />
       case "agendado":
       case "executando":
-      case "testando":
         return <Zap className="w-4 h-4" />
-      case "falhou":
-      case "reprovado":
       case "erro":
-        return <AlertCircle className="w-4 h-4 text-red-500" />
+        return <AlertCircle className="w-4 h-4 text-red-600" />
       case "sem retorno":
-        return <Clock className="w-4 h-4 text-orange-500" />
+        return <XCircle className="w-4 h-4 text-purple-600" />
       default:
         return <TrendingUp className="w-4 h-4" />
     }
@@ -456,7 +502,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
                   {progress.pending} {isRollout ? "Pendentes" : "Aguardando"}
                 </span>
               </span>
-              {!isRollout && progress.failed > 0 && (
+              {progress.failed > 0 && (
                 <span className="flex items-center space-x-1">
                   <AlertCircle className="w-4 h-4 text-red-600" />
                   <span>{progress.failed} Falharam</span>
