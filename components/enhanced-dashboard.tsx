@@ -185,6 +185,8 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
       case "reprovado":
       case "erro":
         return "text-red-600 bg-red-100"
+      case "sem retorno":
+        return "text-orange-600 bg-orange-100"
       default:
         return "text-gray-600 bg-gray-100"
     }
@@ -209,6 +211,8 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
       case "reprovado":
       case "erro":
         return <AlertCircle className="w-4 h-4 text-red-500" />
+      case "sem retorno":
+        return <Clock className="w-4 h-4 text-orange-500" />
       default:
         return <TrendingUp className="w-4 h-4" />
     }

@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Expand, Eye } from "lucide-react"
+import { Expand, Eye, Copy } from "lucide-react"
 import type { Column } from "../types"
 
 interface EditableCellProps {
@@ -40,9 +40,11 @@ export function EditableCell({ value, column, onSave }: EditableCellProps) {
   }, [isEditing])
 
   const handleSave = () => {
-    // Sempre salva o valor atual (mesmo que seja igual ao anterior)
-    onSave(editValue)
-    setOriginalValue(editValue) // Atualiza o valor original
+    // Só salva se o valor realmente mudou
+    if (editValue !== originalValue) {
+      onSave(editValue)
+      setOriginalValue(editValue)
+    }
     setIsEditing(false)
   }
 
@@ -98,6 +100,21 @@ export function EditableCell({ value, column, onSave }: EditableCellProps) {
     }
 
     return inputValue
+  }
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text || "")
+      // Você pode adicionar um toast aqui se quiser
+    } catch (err) {
+      // Fallback para navegadores mais antigos
+      const textArea = document.createElement("textarea")
+      textArea.value = text || ""
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textArea)
+    }
   }
 
   if (column.type === "select") {
@@ -211,12 +228,26 @@ export function EditableCell({ value, column, onSave }: EditableCellProps) {
 
   return (
     <div
-      className="min-h-8 px-2 py-2 cursor-text hover:bg-gray-50 flex items-center min-w-0"
+      className="min-h-8 px-2 py-2 cursor-text hover:bg-gray-50 flex items-center justify-between min-w-0 group"
       onClick={() => setIsEditing(true)}
     >
-      <span className="text-xs leading-tight break-words max-w-full truncate" title={displayValue}>
+      <span className="text-xs leading-tight break-words flex-1 truncate" title={displayValue}>
         {displayValue}
       </span>
+      {displayValue && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-1"
+          onClick={(e) => {
+            e.stopPropagation()
+            copyToClipboard(displayValue)
+          }}
+          title="Copiar texto"
+        >
+          <Copy className="w-3 h-3" />
+        </Button>
+      )}
     </div>
   )
 }

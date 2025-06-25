@@ -115,13 +115,33 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
   }, [unsavedChanges, tabData, onRefresh])
 
   const updateCell = (rowId: string, columnKey: string, value: any) => {
-    // Atualiza o estado local imediatamente (APENAS VISUAL - SEM AUTO-SAVE)
-    setUnsavedChanges((prev) => {
-      const newChanges = new Map(prev)
-      const rowChanges = newChanges.get(rowId) || {}
-      newChanges.set(rowId, { ...rowChanges, [columnKey]: value })
-      return newChanges
-    })
+    // Busca o valor original da linha
+    const originalRow = tabData.rows.find((r) => r.id === rowId)
+    const originalValue = originalRow?.[columnKey]
+
+    // Só marca como alterado se o valor realmente mudou
+    if (value !== originalValue) {
+      setUnsavedChanges((prev) => {
+        const newChanges = new Map(prev)
+        const rowChanges = newChanges.get(rowId) || {}
+        newChanges.set(rowId, { ...rowChanges, [columnKey]: value })
+        return newChanges
+      })
+    } else {
+      // Se o valor voltou ao original, remove da lista de alterações
+      setUnsavedChanges((prev) => {
+        const newChanges = new Map(prev)
+        const rowChanges = newChanges.get(rowId) || {}
+        const { [columnKey]: removed, ...remainingChanges } = rowChanges
+
+        if (Object.keys(remainingChanges).length === 0) {
+          newChanges.delete(rowId)
+        } else {
+          newChanges.set(rowId, remainingChanges)
+        }
+        return newChanges
+      })
+    }
   }
 
   // Função para salvar manualmente
@@ -265,7 +285,7 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
     })
   }
 
-  // Função para determinar a cor da linha baseada no status
+  // Função para determinar a cor da linha baseada no status - ATUALIZADA COM NOVOS STATUS
   const getRowStatusColor = (row: any) => {
     if (!statusColumn) return ""
 
@@ -280,6 +300,10 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
       return "bg-yellow-50 border-l-4 border-yellow-500"
     } else if (status?.includes("agend")) {
       return "bg-blue-50 border-l-4 border-blue-500"
+    } else if (status?.includes("erro")) {
+      return "bg-red-50 border-l-4 border-red-500"
+    } else if (status?.includes("sem retorno")) {
+      return "bg-orange-50 border-l-4 border-orange-500"
     }
 
     return ""
