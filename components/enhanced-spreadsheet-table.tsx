@@ -269,17 +269,65 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
   const getRowStatusColor = (row: any) => {
     if (!statusColumn) return ""
 
-    const status = row[statusColumn.key]?.toLowerCase()
+    const rowChanges = unsavedChanges.get(row.id) || {}
+    const currentStatus =
+      rowChanges[statusColumn.key] !== undefined ? rowChanges[statusColumn.key] : row[statusColumn.key]
+    const status = currentStatus?.toLowerCase()
 
     if (status?.includes("conclu") || status?.includes("finaliz")) {
-      return "bg-green-50 border-l-4 border-green-400"
+      return "bg-green-50 border-l-4 border-green-500"
     } else if (status?.includes("pendente")) {
-      return "bg-yellow-50 border-l-4 border-yellow-400"
+      return "bg-yellow-50 border-l-4 border-yellow-500"
     } else if (status?.includes("agend")) {
-      return "bg-blue-50 border-l-4 border-blue-400"
+      return "bg-blue-50 border-l-4 border-blue-500"
     }
 
     return ""
+  }
+
+  // Função para formatar data/hora de forma mais legível
+  const formatDateTime = (value: string) => {
+    if (!value) return ""
+
+    // Se for formato ISO (2025-06-26T11:00)
+    if (value.includes("T")) {
+      const [date, time] = value.split("T")
+      const [year, month, day] = date.split("-")
+      const [hour, minute] = time.split(":")
+      return `${day}/${month}/${year} ${hour}:${minute}`
+    }
+
+    return value
+  }
+
+  // Função para otimizar larguras das colunas baseado no conteúdo
+  const getOptimizedColumnWidth = (column: Column) => {
+    const key = column.key.toLowerCase()
+
+    // Larguras otimizadas para caber tudo na tela
+    if (key.includes("carimbo") || key.includes("data")) {
+      return 140 // Data/hora compacta
+    } else if (key.includes("nome") || key.includes("restaurante")) {
+      return 180 // Nome do restaurante
+    } else if (key.includes("telefone")) {
+      return 120 // Telefone
+    } else if (key.includes("solicitante")) {
+      return 100 // Solicitante
+    } else if (key.includes("merchant")) {
+      return 120 // Merchant ID (truncado)
+    } else if (key.includes("pdv") || key.includes("integradora")) {
+      return 120 // PDV/Integradora
+    } else if (key.includes("observacao")) {
+      return 200 // Observação (mais espaço)
+    } else if (key.includes("status")) {
+      return 100 // Status
+    } else if (key.includes("agendamento")) {
+      return 140 // Data de agendamento
+    } else if (key.includes("loja")) {
+      return 250 // Para rollout - nome da loja
+    }
+
+    return column.width || 120 // Default menor
   }
 
   return (
@@ -393,109 +441,123 @@ export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreads
         </div>
       )}
 
-      {/* Table */}
+      {/* Table - Otimizada para caber na tela */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow duration-200">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50/80">
-              <TableHead className="w-12 text-center">
-                <Checkbox
-                  checked={selectedRows.size === tabData.rows.length && tabData.rows.length > 0}
-                  onCheckedChange={toggleAllSelection}
-                  className="mx-auto hover:scale-110 transition-transform duration-200"
-                />
-              </TableHead>
-              {tabData.columns.map((column) => (
-                <TableHead
-                  key={column.key}
-                  className="font-semibold text-gray-700 border-r last:border-r-0 py-4 px-3 hover:bg-gray-100 transition-colors duration-200"
-                  style={{
-                    width: column.width ? `${column.width}px` : "auto",
-                    maxWidth: column.width ? `${column.width}px` : "200px",
-                    minWidth: "100px",
-                  }}
-                >
-                  <div className="truncate" title={column.label}>
-                    {column.label}
-                  </div>
+        <div className="overflow-x-auto">
+          <Table className="w-full table-fixed">
+            <TableHeader>
+              <TableRow className="bg-gray-50/80">
+                <TableHead className="w-12 text-center">
+                  <Checkbox
+                    checked={selectedRows.size === tabData.rows.length && tabData.rows.length > 0}
+                    onCheckedChange={toggleAllSelection}
+                    className="mx-auto hover:scale-110 transition-transform duration-200"
+                  />
                 </TableHead>
-              ))}
-              <TableHead className="w-16 text-center">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {tabData.rows.map((row, index) => {
-              const hasUnsavedChanges = unsavedChanges.has(row.id)
-              const rowChanges = unsavedChanges.get(row.id) || {}
-              const isSelected = selectedRows.has(row.id)
-              const statusColorClass = getRowStatusColor(row)
+                {tabData.columns.map((column) => {
+                  const optimizedWidth = getOptimizedColumnWidth(column)
 
-              return (
-                <TableRow
-                  key={row.id}
-                  className={`
-                    ${index % 2 === 0 ? "bg-white" : "bg-gray-50/30"}
-                    ${pendingChanges.has(row.id) ? "bg-blue-50" : ""}
-                    ${hasUnsavedChanges ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}
-                    ${isSelected ? "bg-blue-100 border-l-4 border-blue-500" : ""}
-                    ${statusColorClass}
-                    hover:bg-blue-50/50 hover:scale-[1.01] transition-all duration-200
-                  `}
-                >
-                  <TableCell className="text-center">
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => toggleRowSelection(row.id)}
-                      className="hover:scale-110 transition-transform duration-200"
-                    />
-                  </TableCell>
-                  {tabData.columns.map((column) => {
-                    // Mostra o valor local se houver mudanças não salvas
-                    const displayValue = rowChanges[column.key] !== undefined ? rowChanges[column.key] : row[column.key]
-
-                    return (
-                      <TableCell
-                        key={column.key}
-                        className={`p-0 border-r last:border-r-0 relative overflow-hidden hover:bg-blue-50/30 transition-colors duration-200`}
-                        style={{
-                          width: column.width ? `${column.width}px` : "auto",
-                          maxWidth: column.width ? `${column.width}px` : "200px",
-                        }}
-                      >
-                        <EditableCell
-                          value={displayValue}
-                          column={column}
-                          onSave={(value) => updateCell(row.id, column.key, value)}
-                        />
-                        {pendingChanges.has(row.id) && (
-                          <div className="absolute top-1 right-1">
-                            <LoadingSpinner size="sm" />
-                          </div>
-                        )}
-                        {hasUnsavedChanges && rowChanges[column.key] !== undefined && (
-                          <div className="absolute top-1 left-1">
-                            <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                          </div>
-                        )}
-                      </TableCell>
-                    )
-                  })}
-                  <TableCell className="p-2 text-center">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteRow(row.id)}
-                      disabled={isPending}
-                      className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 hover:scale-125 transition-all duration-200 group"
+                  return (
+                    <TableHead
+                      key={column.key}
+                      className="font-semibold text-gray-700 border-r last:border-r-0 py-4 px-2 hover:bg-gray-100 transition-colors duration-200 text-xs"
+                      style={{
+                        width: `${optimizedWidth}px`,
+                        maxWidth: `${optimizedWidth}px`,
+                        minWidth: `${optimizedWidth}px`,
+                      }}
                     >
-                      <Trash2 className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
+                      <div className="truncate" title={column.label}>
+                        {column.label}
+                      </div>
+                    </TableHead>
+                  )
+                })}
+                <TableHead className="w-16 text-center">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tabData.rows.map((row, index) => {
+                const hasUnsavedChanges = unsavedChanges.has(row.id)
+                const rowChanges = unsavedChanges.get(row.id) || {}
+                const isSelected = selectedRows.has(row.id)
+                const statusColorClass = getRowStatusColor(row)
+
+                return (
+                  <TableRow
+                    key={row.id}
+                    className={`
+                      ${index % 2 === 0 ? "bg-white" : "bg-gray-50/30"}
+                      ${pendingChanges.has(row.id) ? "bg-blue-50 border-l-4 border-blue-400" : ""}
+                      ${hasUnsavedChanges ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}
+                      ${isSelected ? "bg-blue-100 border-l-4 border-blue-500" : ""}
+                      ${!pendingChanges.has(row.id) && !hasUnsavedChanges && !isSelected ? statusColorClass : ""}
+                      hover:bg-blue-50/50 transition-all duration-200
+                    `}
+                  >
+                    <TableCell className="text-center">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleRowSelection(row.id)}
+                        className="hover:scale-110 transition-transform duration-200"
+                      />
+                    </TableCell>
+                    {tabData.columns.map((column) => {
+                      // Mostra o valor local se houver mudanças não salvas
+                      let displayValue = rowChanges[column.key] !== undefined ? rowChanges[column.key] : row[column.key]
+
+                      // Formatar data/hora para exibição mais legível
+                      if ((column.type === "datetime" || column.key.toLowerCase().includes("data")) && displayValue) {
+                        displayValue = formatDateTime(displayValue)
+                      }
+
+                      const optimizedWidth = getOptimizedColumnWidth(column)
+
+                      return (
+                        <TableCell
+                          key={column.key}
+                          className={`p-0 border-r last:border-r-0 relative overflow-hidden hover:bg-blue-50/30 transition-colors duration-200`}
+                          style={{
+                            width: `${optimizedWidth}px`,
+                            maxWidth: `${optimizedWidth}px`,
+                            minWidth: `${optimizedWidth}px`,
+                          }}
+                        >
+                          <EditableCell
+                            value={rowChanges[column.key] !== undefined ? rowChanges[column.key] : row[column.key]}
+                            column={column}
+                            onSave={(value) => updateCell(row.id, column.key, value)}
+                          />
+                          {pendingChanges.has(row.id) && (
+                            <div className="absolute top-1 right-1">
+                              <LoadingSpinner size="sm" />
+                            </div>
+                          )}
+                          {hasUnsavedChanges && rowChanges[column.key] !== undefined && (
+                            <div className="absolute top-1 left-1">
+                              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+                            </div>
+                          )}
+                        </TableCell>
+                      )
+                    })}
+                    <TableCell className="p-2 text-center">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteRow(row.id)}
+                        disabled={isPending}
+                        className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 hover:scale-125 transition-all duration-200 group"
+                      >
+                        <Trash2 className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {/* Column Editor Dialog */}

@@ -163,53 +163,56 @@ export function TabManager({ tabs, onUpdateTabs, activeTab, onSetActiveTab, show
             </Button>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 relative">
             {/* BOTÃO PARA CRIAR NOVA ABA */}
-            {isCreatingTab ? (
-              <div className="flex items-center space-x-2">
-                <Input
-                  value={newTabName}
-                  onChange={(e) => setNewTabName(e.target.value)}
-                  placeholder="Nome da nova aba..."
-                  className="h-7 w-48 focus:scale-105 transition-transform duration-200"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") createNewTab()
-                    if (e.key === "Escape") {
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCreatingTab(true)}
+              className="h-7 px-3 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200 hover:border-green-300 hover:scale-110 hover:shadow-md transition-all duration-300 group"
+            >
+              <Plus className="w-3 h-3 mr-1 group-hover:rotate-90 transition-transform duration-200" />
+              <span className="group-hover:scale-105 transition-transform duration-200">Nova Aba</span>
+            </Button>
+
+            {/* Modal inline para criar nova aba */}
+            {isCreatingTab && (
+              <div className="absolute top-full left-0 mt-2 p-3 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[300px]">
+                <div className="flex items-center space-x-2">
+                  <Input
+                    value={newTabName}
+                    onChange={(e) => setNewTabName(e.target.value)}
+                    placeholder="Nome da nova aba..."
+                    className="h-8 flex-1 focus:scale-105 transition-transform duration-200"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") createNewTab()
+                      if (e.key === "Escape") {
+                        setIsCreatingTab(false)
+                        setNewTabName("")
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    onClick={createNewTab}
+                    className="h-8 px-3 bg-green-600 hover:bg-green-700 hover:scale-110 transition-all duration-200"
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
                       setIsCreatingTab(false)
                       setNewTabName("")
-                    }
-                  }}
-                  autoFocus
-                />
-                <Button
-                  size="sm"
-                  onClick={createNewTab}
-                  className="h-7 px-2 bg-green-600 hover:bg-green-700 hover:scale-110 transition-all duration-200"
-                >
-                  <Check className="w-3 h-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setIsCreatingTab(false)
-                    setNewTabName("")
-                  }}
-                  className="h-7 px-2 hover:scale-110 transition-all duration-200"
-                >
-                  <X className="w-3 h-3" />
-                </Button>
+                    }}
+                    className="h-8 px-3 hover:scale-110 transition-all duration-200"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsCreatingTab(true)}
-                className="h-7 px-3 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200 hover:border-green-300 hover:scale-110 hover:shadow-md transition-all duration-300 group"
-              >
-                <Plus className="w-3 h-3 mr-1 group-hover:rotate-90 transition-transform duration-200" />
-                <span className="group-hover:scale-105 transition-transform duration-200">Nova Aba</span>
-              </Button>
             )}
 
             <GoogleSheetsImport onImportComplete={onUpdateTabs} />
