@@ -118,7 +118,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     )
 
     console.log("Lojas processadas:", storeArray.length)
-    console.log("Primeiras 3 lojas:", storeArray.slice(0, 3))
+    console.log("Status groups:", Object.keys(statusGroups))
     console.log("=== FIM DO CÁLCULO ROLLOUT ===")
     return { stores: storeArray, statusGroups }
   }, [data.recentActivity, dashboardType])
@@ -167,53 +167,76 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
     )
 
     console.log("Testes processados:", testArray.length)
-    console.log("Primeiros 3 testes:", testArray.slice(0, 3))
+    console.log("Status groups:", Object.keys(statusGroups))
     console.log("=== FIM DO CÁLCULO TESTES ===")
     return { tests: testArray, statusGroups }
   }, [data.recentActivity, dashboardType])
 
-  // Calcular progresso baseado no tipo - CORRIGIDO PARA INCLUIR NOVOS STATUS
+  // Calcular progresso baseado no tipo - CORRIGIDO PARA TRATAR "SEM RETORNO" CORRETAMENTE
   const progress = useMemo(() => {
     const isRollout = dashboardType === "rollout"
     const items = isRollout ? rolloutStats.stores : testingStats.tests
     const statusGroups = isRollout ? rolloutStats.statusGroups : testingStats.statusGroups
 
+    console.log("=== CALCULANDO PROGRESSO ===")
+    console.log("Status disponíveis:", Object.keys(statusGroups))
+    console.log("Status counts do data:", data.statusCounts)
+
     const total = items.length
+
+    // Concluídos (sucesso)
     const completed =
-      statusGroups["Concluído"]?.length ||
-      statusGroups["Concluido"]?.length ||
-      statusGroups["Aprovado"]?.length ||
-      statusGroups["Passou"]?.length ||
-      0
+      (statusGroups["Concluído"]?.length || 0) +
+      (statusGroups["Concluido"]?.length || 0) +
+      (statusGroups["Aprovado"]?.length || 0) +
+      (statusGroups["Passou"]?.length || 0)
+
+    // Em andamento/progresso
     const inProgress =
-      statusGroups["Em Andamento"]?.length ||
-      statusGroups["Executando"]?.length ||
-      statusGroups["Testando"]?.length ||
-      statusGroups["Agendado"]?.length ||
-      0
+      (statusGroups["Em Andamento"]?.length || 0) +
+      (statusGroups["Executando"]?.length || 0) +
+      (statusGroups["Testando"]?.length || 0) +
+      (statusGroups["Agendado"]?.length || 0)
+
+    // Pendentes (incluindo sem retorno - pois precisam de ação)
     const pending =
-      statusGroups["Pendente"]?.length ||
-      statusGroups["Aguardando"]?.length ||
-      statusGroups["Não Testado"]?.length ||
-      statusGroups["Sem retorno"]?.length ||
-      statusGroups["Sem Retorno"]?.length ||
-      0
+      (statusGroups["Pendente"]?.length || 0) +
+      (statusGroups["Aguardando"]?.length || 0) +
+      (statusGroups["Não Testado"]?.length || 0)
+
+    // Sem retorno (categoria especial - não é erro, mas precisa de acompanhamento)
+    const noResponse = (statusGroups["Sem retorno"]?.length || 0) + (statusGroups["Sem Retorno"]?.length || 0)
+
+    // Falhas/erros (problemas reais)
     const failed =
-      statusGroups["Falhou"]?.length || statusGroups["Reprovado"]?.length || statusGroups["Erro"]?.length || 0
+      (statusGroups["Falhou"]?.length || 0) +
+      (statusGroups["Reprovado"]?.length || 0) +
+      (statusGroups["Erro"]?.length || 0)
 
     const successPercentage = total > 0 ? Math.round((completed / total) * 100) : 0
     const remainingPercentage = 100 - successPercentage
+
+    console.log("Métricas calculadas:")
+    console.log("- Total:", total)
+    console.log("- Concluídos:", completed)
+    console.log("- Em progresso:", inProgress)
+    console.log("- Pendentes:", pending)
+    console.log("- Sem retorno:", noResponse)
+    console.log("- Falhas:", failed)
+    console.log("- Taxa de sucesso:", successPercentage + "%")
+    console.log("=== FIM CÁLCULO PROGRESSO ===")
 
     return {
       total,
       completed,
       inProgress,
       pending,
+      noResponse, // Separado dos pendentes para melhor visibilidade
       failed,
       successPercentage,
       remainingPercentage,
     }
-  }, [rolloutStats, testingStats, dashboardType])
+  }, [rolloutStats, testingStats, dashboardType, data.statusCounts])
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -483,7 +506,7 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
                 ? `Progresso do Rollout (${currentItems.length} lojas)`
                 : `Resultados dos Testes (${currentItems.length} testes)`}
             </CardTitle>
-            <div className="flex items-center space-x-4 text-sm text-gray-600">
+            <div className="flex items-center space-x-4 text-sm text-gray-600 flex-wrap">
               <span className="flex items-center space-x-1">
                 <CheckCircle className="w-4 h-4 text-green-600" />
                 <span>
@@ -502,6 +525,12 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
                   {progress.pending} {isRollout ? "Pendentes" : "Aguardando"}
                 </span>
               </span>
+              {progress.noResponse > 0 && (
+                <span className="flex items-center space-x-1">
+                  <XCircle className="w-4 h-4 text-purple-600" />
+                  <span>{progress.noResponse} Sem Retorno</span>
+                </span>
+              )}
               {progress.failed > 0 && (
                 <span className="flex items-center space-x-1">
                   <AlertCircle className="w-4 h-4 text-red-600" />
@@ -523,11 +552,14 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
                   style={{ width: `${progress.successPercentage}%` }}
                 ></div>
               </div>
-              {!isRollout && (
-                <div className="text-xs text-gray-500 mt-1">
-                  Faltam {progress.remainingPercentage}% para 100% de aprovação
+              <div className="text-xs text-gray-500 mt-2 space-y-1">
+                <div>
+                  ✅ {progress.completed} concluídos • 🔄 {progress.inProgress} em progresso
                 </div>
-              )}
+                <div>
+                  ⏳ {progress.pending} pendentes • 🟣 {progress.noResponse} sem retorno • ❌ {progress.failed} falhas
+                </div>
+              </div>
             </div>
 
             {/* Lista de Items */}
