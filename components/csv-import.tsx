@@ -1,13 +1,12 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { FileUp, AlertTriangle, CheckCircle } from "lucide-react"
 import { toast } from "sonner"
-import { createTabAction } from "../app/actions"
+import { createTabAction, bulkCreateRowsAction } from "../app/actions"
 import { LoadingSpinner } from "./loading-spinner"
 import type { TabData, Column } from "../types"
 
@@ -70,6 +69,10 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       const headers = previewData[0]
       const rows = previewData.slice(1)
 
+      console.log("🔄 Starting CSV import...")
+      console.log("Headers:", headers)
+      console.log("Rows count:", rows.length)
+
       // Create columns based on headers
       const columns: Column[] = headers.map((header, index) => {
         const key = sanitizeKey(header)
@@ -87,40 +90,71 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
         }
       })
 
-      // Create data rows
-      const tabRows = rows.map((row, index) => {
-        const rowData: any = {
-          id: `imported-${Date.now()}-${index}`,
-        }
-
-        headers.forEach((header, colIndex) => {
-          const key = sanitizeKey(header)
-          rowData[key] = row[colIndex] || ""
-        })
-
-        return rowData
-      })
-
       // Create tab data
-      const tabData: TabData = {
+      const tabData: Omit<TabData, "rows"> = {
         id: `imported-csv-${Date.now()}`,
         name: file.name.replace(".csv", ""),
         columns,
-        rows: tabRows,
+        dashboardType: "rollout",
       }
 
-      const result = await createTabAction(tabData)
+      console.log("📝 Creating tab:", tabData)
 
-      if (result.success) {
-        toast.success(`Arquivo CSV importado com sucesso!`)
-        setIsOpen(false)
-        onImportComplete()
-        resetState()
+      // First create the tab
+      const tabResult = await createTabAction(tabData)
+
+      if (!tabResult.success) {
+        throw new Error(tabResult.error || "Failed to create tab")
+      }
+
+      console.log("✅ Tab created successfully")
+
+      // Then create all rows
+      const rowsData = rows
+        .map((row, index) => {
+          const rowData: any = {}
+
+          headers.forEach((header, colIndex) => {
+            const key = sanitizeKey(header)
+            const value = row[colIndex] || ""
+            if (value.trim()) {
+              // Only add non-empty values
+              rowData[key] = value.trim()
+            }
+          })
+
+          // Only include rows that have at least one non-empty field
+          const hasData = Object.values(rowData).some((value) => String(value).trim() !== "")
+          if (hasData) {
+            return {
+              id: `imported-${Date.now()}-${index}`,
+              ...rowData,
+            }
+          }
+          return null
+        })
+        .filter(Boolean) // Remove null entries
+
+      console.log("📊 Creating rows:", rowsData.length)
+
+      if (rowsData.length > 0) {
+        const rowsResult = await bulkCreateRowsAction(tabData.id, rowsData)
+
+        if (!rowsResult.success) {
+          console.warn("⚠️ Some rows failed to import:", rowsResult)
+          toast.success(`Aba criada! ${rowsResult.imported || 0} registros importados com sucesso.`)
+        } else {
+          toast.success(`Arquivo CSV importado com sucesso! ${rowsData.length} registros adicionados.`)
+        }
       } else {
-        toast.error("Erro ao importar dados")
+        toast.success("Aba criada, mas nenhum registro válido foi encontrado no CSV.")
       }
+
+      setIsOpen(false)
+      onImportComplete()
+      resetState()
     } catch (error: any) {
-      console.error("Import error:", error)
+      console.error("❌ Import error:", error)
       toast.error(error.message || "Erro ao importar dados")
     } finally {
       setIsImporting(false)
@@ -151,7 +185,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       return "datetime"
     }
 
-    if (headerLower.includes("status") || headerLower.includes("situacao")) {
+    if (headerLower.includes("status") || headerLower.includes("situacao") || headerLower.includes("realizado")) {
       return "select"
     }
 
@@ -192,7 +226,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       <DialogTrigger asChild>
         <Button
           variant="outline"
-          className="border-2 border-dashed border-green-300 hover:border-green-500 hover:bg-green-50 text-green-600 hover:text-green-700"
+          className="border-2 border-dashed border-green-300 hover:border-green-500 hover:bg-green-50 text-green-600 hover:text-green-700 bg-transparent"
         >
           <FileUp className="w-4 h-4 mr-2" />
           Importar CSV

@@ -1,7 +1,13 @@
 import { neon } from "@neondatabase/serverless"
 import type { TabData, TableRow } from "../types"
 
-const sql = neon(process.env.DATABASE_URL!)
+// Verificar se a variável de ambiente existe
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL environment variable is not set")
+  throw new Error("DATABASE_URL environment variable is required")
+}
+
+const sql = neon(process.env.DATABASE_URL)
 
 export async function getTabs(): Promise<TabData[]> {
   try {
@@ -56,6 +62,74 @@ export async function getTabs(): Promise<TabData[]> {
   } catch (error) {
     console.error("Error fetching tabs:", error)
     return []
+  }
+}
+
+export async function getTabById(tabId: string): Promise<TabData | null> {
+  try {
+    console.log("=== DATABASE getTabById START ===")
+    console.log("Fetching tab:", tabId)
+
+    // First try to get tab with dashboard_type column
+    let tab
+    try {
+      const tabs = await sql`
+        SELECT id, name, columns, dashboard_type, created_at, updated_at 
+        FROM tabs 
+        WHERE id = ${tabId}
+        LIMIT 1
+      `
+      tab = tabs[0]
+    } catch (error) {
+      // If dashboard_type column doesn't exist, fall back to basic query
+      console.log("dashboard_type column not found, using fallback query")
+      const tabs = await sql`
+        SELECT id, name, columns, created_at, updated_at 
+        FROM tabs 
+        WHERE id = ${tabId}
+        LIMIT 1
+      `
+      tab = tabs[0]
+    }
+
+    if (!tab) {
+      console.log("Tab not found:", tabId)
+      return null
+    }
+
+    // Get all rows for this tab
+    const rows = await sql`
+      SELECT id, data, created_at, updated_at 
+      FROM tab_rows 
+      WHERE tab_id = ${tabId}
+      ORDER BY created_at ASC
+    `
+
+    // Determine dashboard type based on name if column doesn't exist
+    const dashboardType =
+      tab.dashboard_type ||
+      (tab.name.toLowerCase().includes("teste") || tab.name.toLowerCase().includes("integra") ? "testing" : "rollout")
+
+    const result = {
+      id: tab.id,
+      name: tab.name,
+      columns: tab.columns,
+      dashboardType,
+      rows: rows.map((row) => ({
+        id: row.id,
+        ...row.data,
+      })),
+    }
+
+    console.log("✅ Tab fetched successfully:", result.name)
+    console.log("=== DATABASE getTabById END ===")
+    return result
+  } catch (error) {
+    console.error("=== DATABASE getTabById ERROR ===")
+    console.error("Error fetching tab by ID:", error)
+    console.error("Error message:", error.message)
+    console.error("=== DATABASE getTabById ERROR END ===")
+    return null
   }
 }
 
@@ -215,5 +289,48 @@ export async function getDatabaseStats() {
       recentActivity: 0,
       lastUpdate: new Date().toISOString(),
     }
+  }
+}
+
+// Função para buscar linhas por tab ID
+export async function getRowsByTabId(tabId: string) {
+  try {
+    const rows = await sql`
+      SELECT id, data, created_at, updated_at 
+      FROM tab_rows 
+      WHERE tab_id = ${tabId}
+      ORDER BY created_at ASC
+    `
+
+    return rows.map((row) => ({
+      id: row.id,
+      ...row.data,
+    }))
+  } catch (error) {
+    console.error("Error fetching rows by tab ID:", error)
+    return []
+  }
+}
+
+// Função para contar registros por status
+export async function getStatusCountsByTabId(tabId: string) {
+  try {
+    const rows = await sql`
+      SELECT data 
+      FROM tab_rows 
+      WHERE tab_id = ${tabId}
+    `
+
+    const statusCounts: { [key: string]: number } = {}
+
+    rows.forEach((row) => {
+      const status = row.data?.status || "Sem Status"
+      statusCounts[status] = (statusCounts[status] || 0) + 1
+    })
+
+    return statusCounts
+  } catch (error) {
+    console.error("Error fetching status counts:", error)
+    return {}
   }
 }

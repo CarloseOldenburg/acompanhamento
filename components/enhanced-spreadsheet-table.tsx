@@ -1,19 +1,45 @@
 "use client"
 
-import { useState, useTransition, useCallback } from "react"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Plus, Trash2, RefreshCw, Save, Settings, Type, List, Calendar } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Plus,
+  Search,
+  Filter,
+  Download,
+  MoreVertical,
+  Edit,
+  Trash2,
+  Eye,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  XCircle,
+} from "lucide-react"
 import { EditableCell } from "./editable-cell"
-import { LoadingSpinner } from "./loading-spinner"
-import type { TabData, Column } from "../types"
-import { createRowAction, updateRowAction, deleteRowAction, updateTabAction } from "../app/actions"
+import { createRowAction, updateRowAction, deleteRowAction } from "../app/actions"
 import { toast } from "sonner"
+import type { TabData, RowData } from "../types"
 
 interface EnhancedSpreadsheetTableProps {
   tabData: TabData
@@ -21,776 +47,471 @@ interface EnhancedSpreadsheetTableProps {
 }
 
 export function EnhancedSpreadsheetTable({ tabData, onRefresh }: EnhancedSpreadsheetTableProps) {
-  const [isPending, startTransition] = useTransition()
-  const [pendingChanges, setPendingChanges] = useState<Set<string>>(new Set())
-  const [unsavedChanges, setUnsavedChanges] = useState<Map<string, any>>(new Map())
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterStatus, setFilterStatus] = useState<string>("all")
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
-  const [bulkStatus, setBulkStatus] = useState<string>("")
-  const [showColumnEditor, setShowColumnEditor] = useState(false)
-  const [editingColumns, setEditingColumns] = useState<Column[]>([])
-  const [showAddColumn, setShowAddColumn] = useState(false)
-  const [newColumn, setNewColumn] = useState<Partial<Column>>({
-    label: "",
-    type: "text",
-    width: 150,
-  })
+  const [isAddingRow, setIsAddingRow] = useState(false)
+  const [newRowData, setNewRowData] = useState<Record<string, any>>({})
+  const [editingRow, setEditingRow] = useState<RowData | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
-  // Get status column for bulk operations
-  const statusColumn = tabData.columns.find((col) => col.key === "status" || col.label.toLowerCase().includes("status"))
-
-  const addRow = () => {
-    startTransition(async () => {
-      const newRow: { id: string } = {
-        id: `row-${Date.now()}`,
+  // Verificação de segurança para tabData
+  const safeTabData = useMemo(() => {
+    if (!tabData || typeof tabData !== "object") {
+      console.warn("⚠️ Invalid tabData:", tabData)
+      return {
+        id: "unknown",
+        name: "Unknown Tab",
+        columns: [],
+        rows: [],
+        dashboardType: "rollout" as const,
       }
-
-      tabData.columns.forEach((col) => {
-        newRow[col.key] = ""
-      })
-
-      const result = await createRowAction(tabData.id, newRow)
-      if (result.success) {
-        toast.success("Linha adicionada com sucesso!")
-        onRefresh()
-      } else {
-        toast.error("Erro ao adicionar linha")
-      }
-    })
-  }
-
-  const deleteRow = (rowId: string) => {
-    startTransition(async () => {
-      const result = await deleteRowAction(rowId)
-      if (result.success) {
-        toast.success("Linha removida com sucesso!")
-        setSelectedRows((prev) => {
-          const newSet = new Set(prev)
-          newSet.delete(rowId)
-          return newSet
-        })
-        onRefresh()
-      } else {
-        toast.error("Erro ao remover linha")
-      }
-    })
-  }
-
-  const saveChanges = useCallback(async () => {
-    if (unsavedChanges.size === 0) return
-
-    const changesToSave = Array.from(unsavedChanges.entries())
-    setUnsavedChanges(new Map())
-
-    startTransition(async () => {
-      try {
-        for (const [rowId, changes] of changesToSave) {
-          setPendingChanges((prev) => new Set(prev).add(rowId))
-
-          const row = tabData.rows.find((r) => r.id === rowId)
-          if (row) {
-            const updatedRow = { ...row, ...changes }
-            const result = await updateRowAction(tabData.id, updatedRow)
-
-            if (!result.success) {
-              toast.error(`Erro ao salvar linha: ${result.error}`)
-            }
-          }
-
-          setPendingChanges((prev) => {
-            const newSet = new Set(prev)
-            newSet.delete(rowId)
-            return newSet
-          })
-        }
-
-        if (changesToSave.length > 0) {
-          toast.success(`${changesToSave.length} alteração(ões) salva(s)!`)
-          onRefresh()
-        }
-      } catch (error) {
-        toast.error("Erro ao salvar alterações")
-        console.error("Save error:", error)
-      }
-    })
-  }, [unsavedChanges, tabData, onRefresh])
-
-  const updateCell = (rowId: string, columnKey: string, value: any) => {
-    // Busca o valor original da linha
-    const originalRow = tabData.rows.find((r) => r.id === rowId)
-    const originalValue = originalRow?.[columnKey]
-
-    // Só marca como alterado se o valor realmente mudou
-    if (value !== originalValue) {
-      setUnsavedChanges((prev) => {
-        const newChanges = new Map(prev)
-        const rowChanges = newChanges.get(rowId) || {}
-        newChanges.set(rowId, { ...rowChanges, [columnKey]: value })
-        return newChanges
-      })
-    } else {
-      // Se o valor voltou ao original, remove da lista de alterações
-      setUnsavedChanges((prev) => {
-        const newChanges = new Map(prev)
-        const rowChanges = newChanges.get(rowId) || {}
-        const { [columnKey]: removed, ...remainingChanges } = rowChanges
-
-        if (Object.keys(remainingChanges).length === 0) {
-          newChanges.delete(rowId)
-        } else {
-          newChanges.set(rowId, remainingChanges)
-        }
-        return newChanges
-      })
     }
-  }
 
-  // Função para salvar manualmente
-  const handleManualSave = () => {
-    saveChanges()
-  }
-
-  // Bulk selection functions
-  const toggleRowSelection = (rowId: string) => {
-    setSelectedRows((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(rowId)) {
-        newSet.delete(rowId)
-      } else {
-        newSet.add(rowId)
-      }
-      return newSet
-    })
-  }
-
-  const toggleAllSelection = () => {
-    if (selectedRows.size === tabData.rows.length) {
-      setSelectedRows(new Set())
-    } else {
-      setSelectedRows(new Set(tabData.rows.map((row) => row.id)))
+    return {
+      id: tabData.id || "unknown",
+      name: tabData.name || "Unknown Tab",
+      columns: Array.isArray(tabData.columns) ? tabData.columns : [],
+      rows: Array.isArray(tabData.rows) ? tabData.rows : [],
+      dashboardType: tabData.dashboardType || ("rollout" as const),
     }
-  }
+  }, [tabData])
 
-  const applyBulkStatus = () => {
-    if (!bulkStatus || selectedRows.size === 0 || !statusColumn) {
-      toast.error("Selecione um status e pelo menos uma linha")
+  // Filtrar dados
+  const filteredRows = useMemo(() => {
+    let filtered = safeTabData.rows
+
+    // Filtro por busca
+    if (searchTerm) {
+      filtered = filtered.filter((row) =>
+        Object.values(row).some((value) =>
+          String(value || "")
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()),
+        ),
+      )
+    }
+
+    // Filtro por status
+    if (filterStatus !== "all") {
+      filtered = filtered.filter((row) => row.status === filterStatus)
+    }
+
+    return filtered
+  }, [safeTabData.rows, searchTerm, filterStatus])
+
+  // Obter status únicos
+  const uniqueStatuses = useMemo(() => {
+    const statuses = new Set<string>()
+    safeTabData.rows.forEach((row) => {
+      if (row.status) {
+        statuses.add(row.status)
+      }
+    })
+    return Array.from(statuses)
+  }, [safeTabData.rows])
+
+  // Resetar dados do novo registro quando as colunas mudarem
+  useEffect(() => {
+    const initialData: Record<string, any> = {}
+    safeTabData.columns.forEach((col) => {
+      initialData[col.key] = ""
+    })
+    setNewRowData(initialData)
+  }, [safeTabData.columns])
+
+  const handleAddRow = async () => {
+    if (!safeTabData.id) {
+      toast.error("ID da aba não encontrado")
       return
     }
 
-    startTransition(async () => {
-      let successCount = 0
-      let errorCount = 0
+    // Validar campos obrigatórios
+    const hasRequiredData = safeTabData.columns.some((col) => newRowData[col.key] && String(newRowData[col.key]).trim())
 
-      for (const rowId of selectedRows) {
-        try {
-          const row = tabData.rows.find((r) => r.id === rowId)
-          if (row) {
-            const updatedRow = { ...row, [statusColumn.key]: bulkStatus }
-            const result = await updateRowAction(tabData.id, updatedRow)
-
-            if (result.success) {
-              successCount++
-            } else {
-              errorCount++
-            }
-          }
-        } catch (error) {
-          errorCount++
-        }
-      }
-
-      if (successCount > 0) {
-        toast.success(`${successCount} registro(s) atualizado(s) para "${bulkStatus}"`)
-        setSelectedRows(new Set())
-        setBulkStatus("")
-        onRefresh()
-      }
-
-      if (errorCount > 0) {
-        toast.error(`${errorCount} registro(s) falharam na atualização`)
-      }
-    })
-  }
-
-  // Column management functions
-  const startEditColumns = () => {
-    setEditingColumns([...tabData.columns])
-    setShowColumnEditor(true)
-  }
-
-  const addColumn = () => {
-    if (!newColumn.label?.trim()) {
-      toast.error("Nome da coluna é obrigatório")
+    if (!hasRequiredData) {
+      toast.error("Preencha pelo menos um campo")
       return
     }
 
-    const key = newColumn.label
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_|_$/g, "")
+    setIsLoading(true)
+    try {
+      const result = await createRowAction(safeTabData.id, newRowData)
 
-    const column: Column = {
-      key,
-      label: newColumn.label.trim(),
-      type: newColumn.type || "text",
-      width: newColumn.width || 150,
-    }
+      if (result.success) {
+        toast.success("Registro adicionado com sucesso!")
+        setIsAddingRow(false)
 
-    if (column.type === "select") {
-      column.options = ["Opção 1", "Opção 2", "Opção 3"]
-    }
-
-    setEditingColumns([...editingColumns, column])
-    setNewColumn({ label: "", type: "text", width: 150 })
-    setShowAddColumn(false)
-    toast.success("Coluna adicionada!")
-  }
-
-  const updateColumn = (index: number, field: keyof Column, value: any) => {
-    const updated = [...editingColumns]
-    updated[index] = { ...updated[index], [field]: value }
-    setEditingColumns(updated)
-  }
-
-  const removeColumn = (index: number) => {
-    if (editingColumns.length > 1) {
-      setEditingColumns(editingColumns.filter((_, i) => i !== index))
-      toast.success("Coluna removida!")
-    } else {
-      toast.error("Deve haver pelo menos uma coluna")
-    }
-  }
-
-  const saveColumns = async () => {
-    startTransition(async () => {
-      try {
-        const result = await updateTabAction({
-          id: tabData.id,
-          name: tabData.name,
-          columns: editingColumns,
+        // Resetar formulário
+        const resetData: Record<string, any> = {}
+        safeTabData.columns.forEach((col) => {
+          resetData[col.key] = ""
         })
+        setNewRowData(resetData)
 
-        if (result.success) {
-          toast.success("Colunas atualizadas com sucesso!")
-          setShowColumnEditor(false)
-          onRefresh()
-        } else {
-          toast.error("Erro ao atualizar colunas")
-        }
-      } catch (error) {
-        toast.error("Erro ao salvar colunas")
+        onRefresh()
+      } else {
+        toast.error(`Erro ao adicionar registro: ${result.error}`)
       }
-    })
+    } catch (error) {
+      console.error("Error adding row:", error)
+      toast.error("Erro inesperado ao adicionar registro")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  // Função para determinar a cor da linha baseada no status - ATUALIZADA COM NOVOS STATUS
-  const getRowStatusColor = (row: any) => {
-    if (!statusColumn) return ""
-
-    const rowChanges = unsavedChanges.get(row.id) || {}
-    const currentStatus =
-      rowChanges[statusColumn.key] !== undefined ? rowChanges[statusColumn.key] : row[statusColumn.key]
-    const status = currentStatus?.toLowerCase()
-
-    if (status?.includes("conclu") || status?.includes("finaliz")) {
-      return "bg-green-50 border-l-4 border-green-500"
-    } else if (status?.includes("pendente")) {
-      return "bg-yellow-50 border-l-4 border-yellow-500"
-    } else if (status?.includes("agend")) {
-      return "bg-blue-50 border-l-4 border-blue-500"
-    } else if (status?.includes("erro")) {
-      return "bg-red-50 border-l-4 border-red-600"
-    } else if (status?.includes("sem retorno")) {
-      return "bg-purple-50 border-l-4 border-purple-500"
+  const handleUpdateRow = async (rowId: string, field: string, value: any) => {
+    if (!safeTabData.id) {
+      toast.error("ID da aba não encontrado")
+      return
     }
 
-    return ""
+    setIsLoading(true)
+    try {
+      const result = await updateRowAction(safeTabData.id, rowId, { [field]: value })
+
+      if (result.success) {
+        toast.success("Registro atualizado!")
+        onRefresh()
+      } else {
+        toast.error(`Erro ao atualizar: ${result.error}`)
+      }
+    } catch (error) {
+      console.error("Error updating row:", error)
+      toast.error("Erro inesperado ao atualizar")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  // Função para formatar data/hora de forma mais legível
-  const formatDateTime = (value: string) => {
-    if (!value) return ""
-
-    // Se for formato ISO (2025-06-26T11:00)
-    if (value.includes("T")) {
-      const [date, time] = value.split("T")
-      const [year, month, day] = date.split("-")
-      const [hour, minute] = time.split(":")
-      return `${day}/${month}/${year} ${hour}:${minute}`
+  const handleDeleteRow = async (rowId: string) => {
+    if (!safeTabData.id) {
+      toast.error("ID da aba não encontrado")
+      return
     }
 
-    return value
+    setIsLoading(true)
+    try {
+      const result = await deleteRowAction(safeTabData.id, rowId)
+
+      if (result.success) {
+        toast.success("Registro excluído!")
+        onRefresh()
+      } else {
+        toast.error(`Erro ao excluir: ${result.error}`)
+      }
+    } catch (error) {
+      console.error("Error deleting row:", error)
+      toast.error("Erro inesperado ao excluir")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  // Função para otimizar larguras das colunas baseado no conteúdo
-  const getOptimizedColumnWidth = (column: Column) => {
-    const key = column.key.toLowerCase()
+  const handleExportData = () => {
+    const exportData = filteredRows.map((row, index) => ({
+      ID: index + 1,
+      ...row,
+      "Data de Exportação": new Date().toLocaleDateString("pt-BR"),
+    }))
 
-    // Larguras otimizadas para caber tudo na tela
-    if (key.includes("carimbo") || key.includes("data")) {
-      return 140 // Data/hora compacta
-    } else if (key.includes("nome") || key.includes("restaurante")) {
-      return 180 // Nome do restaurante
-    } else if (key.includes("telefone")) {
-      return 120 // Telefone
-    } else if (key.includes("solicitante")) {
-      return 100 // Solicitante
-    } else if (key.includes("merchant")) {
-      return 120 // Merchant ID (truncado)
-    } else if (key.includes("pdv") || key.includes("integradora")) {
-      return 120 // PDV/Integradora
-    } else if (key.includes("observacao")) {
-      return 200 // Observação (mais espaço)
-    } else if (key.includes("status")) {
-      return 100 // Status
-    } else if (key.includes("agendamento")) {
-      return 140 // Data de agendamento
-    } else if (key.includes("loja")) {
-      return 250 // Para rollout - nome da loja
+    const headers = Object.keys(exportData[0] || {})
+    const csvContent = [
+      headers.join(","),
+      ...exportData.map((row) =>
+        headers
+          .map((header) => `"${(row[header as keyof typeof row] || "").toString().replace(/"/g, '""')}"`)
+          .join(","),
+      ),
+    ].join("\n")
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    link.setAttribute("href", url)
+    link.setAttribute("download", `${safeTabData.name}_${new Date().toISOString().split("T")[0]}.csv`)
+    link.style.visibility = "hidden"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    toast.success("Dados exportados com sucesso!")
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case "concluído":
+      case "concluido":
+        return <CheckCircle className="w-4 h-4 text-green-600" />
+      case "pendente":
+        return <Clock className="w-4 h-4 text-yellow-600" />
+      case "erro":
+        return <XCircle className="w-4 h-4 text-red-600" />
+      case "agendado":
+      case "em andamento":
+        return <RefreshCw className="w-4 h-4 text-blue-600" />
+      default:
+        return <AlertCircle className="w-4 h-4 text-gray-600" />
     }
+  }
 
-    return column.width || 120 // Default menor
+  const getStatusBadge = (status: string) => {
+    const statusLower = status?.toLowerCase() || ""
+
+    if (statusLower.includes("concluí")) {
+      return <Badge className="bg-green-100 text-green-800">{status}</Badge>
+    } else if (statusLower.includes("pendente")) {
+      return <Badge className="bg-yellow-100 text-yellow-800">{status}</Badge>
+    } else if (statusLower.includes("erro")) {
+      return <Badge className="bg-red-100 text-red-800">{status}</Badge>
+    } else if (statusLower.includes("agendado") || statusLower.includes("andamento")) {
+      return <Badge className="bg-blue-100 text-blue-800">{status}</Badge>
+    } else {
+      return <Badge variant="outline">{status}</Badge>
+    }
+  }
+
+  if (safeTabData.columns.length === 0) {
+    return (
+      <Card>
+        <CardContent className="text-center py-12">
+          <AlertCircle className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Estrutura da aba não encontrada</h3>
+          <p className="text-gray-600">Esta aba não possui colunas definidas.</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
     <div className="space-y-6">
-      {/* Header with Actions */}
-      <div className="flex justify-between items-center bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center space-x-4">
-          <h2 className="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors duration-200">
-            {tabData.name}
-          </h2>
-          <div className="flex items-center space-x-3">
-            <div className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium hover:bg-blue-200 transition-colors duration-200">
-              {tabData.rows.length} registros
+      {/* Header com controles */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center space-x-2">
+                <span>{safeTabData.name}</span>
+                <Badge variant="outline">
+                  {filteredRows.length} de {safeTabData.rows.length} registros
+                </Badge>
+              </CardTitle>
             </div>
-            {selectedRows.size > 0 && (
-              <div className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium animate-pulse">
-                {selectedRows.size} selecionado(s)
-              </div>
-            )}
-            {unsavedChanges.size > 0 && (
-              <div className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium animate-bounce">
-                {unsavedChanges.size} não salvo(s)
-              </div>
-            )}
-            {isPending && (
-              <div className="flex items-center space-x-2 text-blue-600">
-                <LoadingSpinner size="sm" />
-                <span className="text-sm">Sincronizando...</span>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center space-x-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={startEditColumns}
-            className="shadow-sm hover:shadow-lg hover:scale-110 hover:bg-blue-50 hover:border-blue-300 transition-all duration-300 group"
-          >
-            <Settings className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
-            Editar Colunas
-          </Button>
-          {unsavedChanges.size > 0 && (
-            <Button
-              onClick={handleManualSave}
-              disabled={isPending}
-              className="bg-yellow-600 hover:bg-yellow-700 shadow-sm hover:shadow-lg hover:scale-110 transition-all duration-300 group"
-            >
-              <Save className="w-4 h-4 mr-2 group-hover:scale-125 transition-transform duration-300" />
-              Salvar Agora ({unsavedChanges.size})
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={onRefresh}
-            disabled={isPending}
-            className="shadow-sm hover:shadow-lg hover:scale-110 hover:bg-green-50 hover:border-green-300 transition-all duration-300 group"
-          >
-            <RefreshCw
-              className={`w-4 h-4 mr-2 ${isPending ? "animate-spin" : "group-hover:rotate-180"} transition-transform duration-300`}
-            />
-            Atualizar
-          </Button>
-          <Button
-            onClick={addRow}
-            disabled={isPending}
-            className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-sm hover:shadow-lg hover:scale-110 transition-all duration-300 group"
-          >
-            <Plus className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
-            Adicionar Linha
-          </Button>
-        </div>
-      </div>
 
-      {/* Bulk Actions */}
-      {statusColumn && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow duration-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <h3 className="font-medium text-gray-900">Ações em Massa</h3>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Busca */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Buscar registros..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 w-full sm:w-64"
+                />
+              </div>
+
+              {/* Filtro por status */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex items-center space-x-2 bg-transparent">
+                    <Filter className="w-4 h-4" />
+                    <span>{filterStatus === "all" ? "Todos" : filterStatus}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => setFilterStatus("all")}>Todos os Status</DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {uniqueStatuses.map((status) => (
+                    <DropdownMenuItem key={status} onClick={() => setFilterStatus(status)}>
+                      <div className="flex items-center space-x-2">
+                        {getStatusIcon(status)}
+                        <span>{status}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Ações */}
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">Status:</span>
-                <Select value={bulkStatus} onValueChange={setBulkStatus}>
-                  <SelectTrigger className="w-48 hover:scale-105 transition-transform duration-200">
-                    <SelectValue placeholder="Selecionar status..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statusColumn.options?.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
                 <Button
-                  onClick={applyBulkStatus}
-                  disabled={!bulkStatus || selectedRows.size === 0 || isPending}
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 hover:scale-110 hover:shadow-lg transition-all duration-300 group"
+                  variant="outline"
+                  onClick={handleExportData}
+                  disabled={filteredRows.length === 0}
+                  className="flex items-center space-x-2 bg-transparent"
                 >
-                  <span className="group-hover:scale-105 transition-transform duration-200">
-                    Aplicar a {selectedRows.size} selecionado(s)
-                  </span>
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline">Exportar</span>
+                </Button>
+
+                <Button
+                  onClick={() => setIsAddingRow(true)}
+                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Adicionar</span>
                 </Button>
               </div>
             </div>
-            <div className="text-sm text-gray-500">
-              {selectedRows.size} de {tabData.rows.length} selecionado(s)
-            </div>
           </div>
-        </div>
-      )}
+        </CardHeader>
+      </Card>
 
-      {/* Table - Otimizada para caber na tela */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow duration-200">
-        <div className="overflow-x-auto">
-          <Table className="w-full table-fixed">
-            <TableHeader>
-              <TableRow className="bg-gray-50/80">
-                <TableHead className="w-12 text-center">
-                  <Checkbox
-                    checked={selectedRows.size === tabData.rows.length && tabData.rows.length > 0}
-                    onCheckedChange={toggleAllSelection}
-                    className="mx-auto hover:scale-110 transition-transform duration-200"
-                  />
-                </TableHead>
-                {tabData.columns.map((column) => {
-                  const optimizedWidth = getOptimizedColumnWidth(column)
-
-                  return (
-                    <TableHead
-                      key={column.key}
-                      className="font-semibold text-gray-700 border-r last:border-r-0 py-4 px-2 hover:bg-gray-100 transition-colors duration-200 text-xs"
-                      style={{
-                        width: `${optimizedWidth}px`,
-                        maxWidth: `${optimizedWidth}px`,
-                        minWidth: `${optimizedWidth}px`,
-                      }}
-                    >
-                      <div className="truncate" title={column.label}>
-                        {column.label}
-                      </div>
+      {/* Tabela */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {safeTabData.columns.map((column) => (
+                    <TableHead key={column.key} className="font-semibold">
+                      {column.label}
                     </TableHead>
-                  )
-                })}
-                <TableHead className="w-16 text-center">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tabData.rows.map((row, index) => {
-                const hasUnsavedChanges = unsavedChanges.has(row.id)
-                const rowChanges = unsavedChanges.get(row.id) || {}
-                const isSelected = selectedRows.has(row.id)
-                const statusColorClass = getRowStatusColor(row)
-
-                return (
-                  <TableRow
-                    key={row.id}
-                    className={`
-                      ${index % 2 === 0 ? "bg-white" : "bg-gray-50/30"}
-                      ${pendingChanges.has(row.id) ? "bg-blue-50 border-l-4 border-blue-400" : ""}
-                      ${hasUnsavedChanges ? "bg-yellow-50 border-l-4 border-yellow-400" : ""}
-                      ${isSelected ? "bg-blue-100 border-l-4 border-blue-500" : ""}
-                      ${!pendingChanges.has(row.id) && !hasUnsavedChanges && !isSelected ? statusColorClass : ""}
-                      hover:bg-blue-50/50 transition-all duration-200
-                    `}
-                  >
-                    <TableCell className="text-center">
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => toggleRowSelection(row.id)}
-                        className="hover:scale-110 transition-transform duration-200"
-                      />
-                    </TableCell>
-                    {tabData.columns.map((column) => {
-                      // Mostra o valor local se houver mudanças não salvas
-                      let displayValue = rowChanges[column.key] !== undefined ? rowChanges[column.key] : row[column.key]
-
-                      // Formatar data/hora para exibição mais legível
-                      if ((column.type === "datetime" || column.key.toLowerCase().includes("data")) && displayValue) {
-                        displayValue = formatDateTime(displayValue)
-                      }
-
-                      const optimizedWidth = getOptimizedColumnWidth(column)
-
-                      return (
-                        <TableCell
-                          key={column.key}
-                          className={`p-0 border-r last:border-r-0 relative overflow-hidden hover:bg-blue-50/30 transition-colors duration-200`}
-                          style={{
-                            width: `${optimizedWidth}px`,
-                            maxWidth: `${optimizedWidth}px`,
-                            minWidth: `${optimizedWidth}px`,
-                          }}
-                        >
-                          <EditableCell
-                            value={rowChanges[column.key] !== undefined ? rowChanges[column.key] : row[column.key]}
-                            column={column}
-                            onSave={(value) => updateCell(row.id, column.key, value)}
-                          />
-                          {pendingChanges.has(row.id) && (
-                            <div className="absolute top-1 right-1">
-                              <LoadingSpinner size="sm" />
-                            </div>
-                          )}
-                          {hasUnsavedChanges && rowChanges[column.key] !== undefined && (
-                            <div className="absolute top-1 left-1">
-                              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                            </div>
-                          )}
-                        </TableCell>
-                      )
-                    })}
-                    <TableCell className="p-2 text-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteRow(row.id)}
-                        disabled={isPending}
-                        className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 hover:scale-125 transition-all duration-200 group"
-                      >
-                        <Trash2 className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" />
-                      </Button>
+                  ))}
+                  <TableHead className="w-20">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={safeTabData.columns.length + 1} className="text-center py-12 text-gray-500">
+                      {searchTerm || filterStatus !== "all"
+                        ? "Nenhum registro encontrado com os filtros aplicados"
+                        : "Nenhum registro encontrado. Adicione o primeiro registro."}
                     </TableCell>
                   </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+                ) : (
+                  filteredRows.map((row, index) => (
+                    <TableRow key={row.id || index} className="hover:bg-gray-50">
+                      {safeTabData.columns.map((column) => (
+                        <TableCell key={column.key}>
+                          {column.key === "status" ? (
+                            <div className="flex items-center space-x-2">
+                              {getStatusIcon(row[column.key])}
+                              {getStatusBadge(row[column.key] || "Sem Status")}
+                            </div>
+                          ) : (
+                            <EditableCell
+                              value={row[column.key] || ""}
+                              column={column}
+                              onSave={(value) => handleUpdateRow(row.id, column.key, value)}
+                              disabled={isLoading}
+                            />
+                          )}
+                        </TableCell>
+                      ))}
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setEditingRow(row)}>
+                              <Eye className="w-4 h-4 mr-2" />
+                              Visualizar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setEditingRow(row)}>
+                              <Edit className="w-4 h-4 mr-2" />
+                              Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteRow(row.id)}
+                              className="text-red-600 focus:text-red-600"
+                              disabled={isLoading}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Column Editor Dialog */}
-      <Dialog open={showColumnEditor} onOpenChange={setShowColumnEditor}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      {/* Dialog para adicionar novo registro */}
+      <Dialog open={isAddingRow} onOpenChange={setIsAddingRow}>
+        <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle className="text-xl font-semibold text-gray-900">Editar Colunas - {tabData.name}</DialogTitle>
+            <DialogTitle>Adicionar Novo Registro</DialogTitle>
+            <DialogDescription>
+              Preencha os campos abaixo para adicionar um novo registro à aba "{safeTabData.name}".
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div className="flex justify-between items-center">
-              <h4 className="font-medium text-gray-900">Configurar Colunas</h4>
-              <Dialog open={showAddColumn} onOpenChange={setShowAddColumn}>
-                <DialogTrigger asChild>
-                  <Button
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-700 hover:scale-110 hover:shadow-lg transition-all duration-300 group"
-                  >
-                    <Plus className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
-                    Adicionar Coluna
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Nova Coluna</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div>
-                      <Label htmlFor="column-name">Nome da Coluna</Label>
-                      <Input
-                        id="column-name"
-                        value={newColumn.label || ""}
-                        onChange={(e) => setNewColumn({ ...newColumn, label: e.target.value })}
-                        placeholder="Ex: Status, Data, Observação..."
-                        className="focus:scale-105 transition-transform duration-200"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="column-type">Tipo</Label>
-                      <Select
-                        value={newColumn.type || "text"}
-                        onValueChange={(value) => setNewColumn({ ...newColumn, type: value as Column["type"] })}
-                      >
-                        <SelectTrigger className="hover:scale-105 transition-transform duration-200">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="text">
-                            <div className="flex items-center">
-                              <Type className="w-4 h-4 mr-2" />
-                              Texto
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="select">
-                            <div className="flex items-center">
-                              <List className="w-4 h-4 mr-2" />
-                              Lista de Opções
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="date">
-                            <div className="flex items-center">
-                              <Calendar className="w-4 h-4 mr-2" />
-                              Data
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="datetime">
-                            <div className="flex items-center">
-                              <Calendar className="w-4 h-4 mr-2" />
-                              Data e Hora
-                            </div>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="column-width">Largura (px)</Label>
-                      <Input
-                        id="column-width"
-                        type="number"
-                        value={newColumn.width || 150}
-                        onChange={(e) => setNewColumn({ ...newColumn, width: Number(e.target.value) })}
-                        min="100"
-                        max="500"
-                        className="focus:scale-105 transition-transform duration-200"
-                      />
-                    </div>
-                    <div className="flex justify-end space-x-3">
-                      <Button
-                        variant="outline"
-                        onClick={() => setShowAddColumn(false)}
-                        className="hover:scale-105 transition-transform duration-200"
-                      >
-                        Cancelar
-                      </Button>
-                      <Button onClick={addColumn} className="hover:scale-105 transition-transform duration-200">
-                        Adicionar
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
+          <div className="grid gap-4 py-4 max-h-96 overflow-y-auto">
+            {safeTabData.columns.map((column) => (
+              <div key={column.key} className="space-y-2">
+                <label className="text-sm font-medium">{column.label}</label>
+                <EditableCell
+                  value={newRowData[column.key] || ""}
+                  column={column}
+                  onSave={(value) => setNewRowData((prev) => ({ ...prev, [column.key]: value }))}
+                  disabled={isLoading}
+                  autoFocus={false}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAddingRow(false)
+                const resetData: Record<string, any> = {}
+                safeTabData.columns.forEach((col) => {
+                  resetData[col.key] = ""
+                })
+                setNewRowData(resetData)
+              }}
+              disabled={isLoading}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleAddRow} disabled={isLoading}>
+              {isLoading ? "Adicionando..." : "Adicionar Registro"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {editingColumns.map((column, index) => (
-                <div
-                  key={index}
-                  className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:bg-gray-100 hover:scale-[1.02] transition-all duration-200"
-                >
-                  <div className="grid grid-cols-12 gap-4 items-end">
-                    <div className="col-span-3">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">Nome da Coluna</Label>
-                      <Input
-                        value={column.label}
-                        onChange={(e) => updateColumn(index, "label", e.target.value)}
-                        className="h-9 focus:scale-105 transition-transform duration-200"
-                        placeholder="Nome da coluna"
-                      />
-                    </div>
-
-                    <div className="col-span-2">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">Chave (ID)</Label>
-                      <Input
-                        value={column.key}
-                        onChange={(e) => updateColumn(index, "key", e.target.value.toLowerCase().replace(/\s+/g, "_"))}
-                        className="h-9 focus:scale-105 transition-transform duration-200"
-                        placeholder="chave_coluna"
-                      />
-                    </div>
-
-                    <div className="col-span-2">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">Tipo</Label>
-                      <Select value={column.type} onValueChange={(value) => updateColumn(index, "type", value)}>
-                        <SelectTrigger className="h-9 hover:scale-105 transition-transform duration-200">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="text">Texto</SelectItem>
-                          <SelectItem value="select">Lista de Opções</SelectItem>
-                          <SelectItem value="date">Data</SelectItem>
-                          <SelectItem value="datetime">Data e Hora</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="col-span-2">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">Largura (px)</Label>
-                      <Input
-                        type="number"
-                        value={column.width || 150}
-                        onChange={(e) => updateColumn(index, "width", Number.parseInt(e.target.value))}
-                        className="h-9 focus:scale-105 transition-transform duration-200"
-                        min="100"
-                        max="500"
-                      />
-                    </div>
-
-                    <div className="col-span-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeColumn(index)}
-                        disabled={editingColumns.length <= 1}
-                        className="h-9 w-full text-red-500 hover:text-red-700 hover:bg-red-50 hover:scale-110 transition-all duration-200 group"
-                      >
-                        <Trash2 className="w-4 h-4 mr-1 group-hover:rotate-12 transition-transform duration-200" />
-                        Remover
-                      </Button>
-                    </div>
-
-                    <div className="col-span-1">
-                      <span className="text-xs text-gray-500">#{index + 1}</span>
-                    </div>
-                  </div>
-
-                  {column.type === "select" && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <Label className="text-xs font-medium text-gray-700 mb-1 block">
-                        Opções (separadas por vírgula)
-                      </Label>
-                      <Input
-                        value={column.options?.join(", ") || ""}
-                        onChange={(e) => updateColumn(index, "options", e.target.value.split(", ").filter(Boolean))}
-                        placeholder="Opção 1, Opção 2, Opção 3"
-                        className="h-9 focus:scale-105 transition-transform duration-200"
-                      />
-                    </div>
-                  )}
+      {/* Dialog para visualizar/editar registro */}
+      <Dialog open={!!editingRow} onOpenChange={() => setEditingRow(null)}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Detalhes do Registro</DialogTitle>
+            <DialogDescription>Visualize e edite os dados do registro selecionado.</DialogDescription>
+          </DialogHeader>
+          {editingRow && (
+            <div className="grid gap-4 py-4 max-h-96 overflow-y-auto">
+              {safeTabData.columns.map((column) => (
+                <div key={column.key} className="space-y-2">
+                  <label className="text-sm font-medium">{column.label}</label>
+                  <EditableCell
+                    value={editingRow[column.key] || ""}
+                    column={column}
+                    onSave={(value) => handleUpdateRow(editingRow.id, column.key, value)}
+                    disabled={isLoading}
+                    autoFocus={false}
+                  />
                 </div>
               ))}
             </div>
-
-            <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-              <Button
-                variant="outline"
-                onClick={() => setShowColumnEditor(false)}
-                disabled={isPending}
-                className="hover:scale-105 transition-transform duration-200"
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={saveColumns}
-                disabled={isPending}
-                className="bg-blue-600 hover:bg-blue-700 hover:scale-105 hover:shadow-lg transition-all duration-200"
-              >
-                {isPending ? "Salvando..." : "Salvar Alterações"}
-              </Button>
-            </div>
-          </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRow(null)}>
+              Fechar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

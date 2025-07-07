@@ -2,12 +2,45 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Edit2, Trash2, Plus, Check, X } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Plus,
+  MoreVertical,
+  Edit,
+  Trash2,
+  Share2,
+  Download,
+  Eye,
+  FileUp,
+  Settings,
+  Table,
+  TestTube,
+} from "lucide-react"
+import { CSVImport } from "./csv-import"
 import { GoogleSheetsImport } from "./google-sheets-import"
-import { toast } from "sonner"
 import { createTabAction, updateTabAction, deleteTabAction } from "../app/actions"
+import { toast } from "sonner"
 import type { TabData, Column } from "../types"
 
 interface TabManagerProps {
@@ -15,424 +48,466 @@ interface TabManagerProps {
   onUpdateTabs: () => void
   activeTab: string
   onSetActiveTab: (tabId: string) => void
-  showActions?: boolean // Para controlar se é admin ou página principal
 }
 
-export function TabManager({ tabs, onUpdateTabs, activeTab, onSetActiveTab, showActions = false }: TabManagerProps) {
-  const [isCreatingTab, setIsCreatingTab] = useState(false)
+export function TabManager({ tabs, onUpdateTabs, activeTab, onSetActiveTab }: TabManagerProps) {
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [editingTab, setEditingTab] = useState<TabData | null>(null)
   const [newTabName, setNewTabName] = useState("")
-  const [editingTab, setEditingTab] = useState<string | null>(null)
-  const [editingName, setEditingName] = useState("")
+  const [newTabType, setNewTabType] = useState<"rollout" | "testing">("rollout")
+  const [isLoading, setIsLoading] = useState(false)
 
-  const currentTab = tabs.find((t) => t.id === activeTab)
-
-  const createNewTab = async () => {
+  const handleCreateTab = async () => {
     if (!newTabName.trim()) {
-      toast.error("Digite um nome para a nova aba")
+      toast.error("Nome da aba é obrigatório")
       return
     }
 
+    setIsLoading(true)
     try {
       const defaultColumns: Column[] = [
-        { key: "loja", label: "Loja", type: "text", width: 250 },
-        { key: "total_totens", label: "Total de Totens", type: "text", width: 150 },
+        { key: "nome", label: "Nome", type: "text", width: 200 },
         {
           key: "status",
           label: "Status",
           type: "select",
-          options: ["Pendente", "Em Andamento", "Concluído", "Cancelado"],
-          width: 150,
+          width: 120,
+          options: ["Pendente", "Em Andamento", "Concluído"],
         },
-        { key: "observacao", label: "Observação", type: "text", width: 300 },
+        { key: "data", label: "Data", type: "date", width: 120 },
+        { key: "observacoes", label: "Observações", type: "textarea", width: 300 },
       ]
 
-      const newTab: TabData = {
+      const tabData: Omit<TabData, "rows"> = {
         id: `tab-${Date.now()}`,
         name: newTabName.trim(),
         columns: defaultColumns,
-        rows: [],
-        dashboardType: "rollout",
+        dashboardType: newTabType,
       }
 
-      const result = await createTabAction(newTab)
+      const result = await createTabAction(tabData)
 
       if (result.success) {
-        toast.success("Nova aba criada com sucesso!")
+        toast.success("Aba criada com sucesso!")
+        setIsCreateDialogOpen(false)
         setNewTabName("")
-        setIsCreatingTab(false)
+        setNewTabType("rollout")
         onUpdateTabs()
-        onSetActiveTab(newTab.id)
+        onSetActiveTab(tabData.id)
       } else {
-        toast.error("Erro ao criar nova aba")
+        toast.error(`Erro ao criar aba: ${result.error}`)
       }
     } catch (error) {
       console.error("Error creating tab:", error)
-      toast.error("Erro ao criar nova aba")
+      toast.error("Erro inesperado ao criar aba")
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const startEditTab = (tab: TabData) => {
-    setEditingTab(tab.id)
-    setEditingName(tab.name)
-  }
-
-  const saveTabName = async (tabId: string) => {
-    const tab = tabs.find((t) => t.id === tabId)
-    if (!tab || !editingName.trim()) return
-
-    try {
-      const result = await updateTabAction({
-        ...tab,
-        name: editingName.trim(),
-      })
-
-      if (result.success) {
-        toast.success("Nome da aba atualizado!")
-        setEditingTab(null)
-        onUpdateTabs()
-      } else {
-        toast.error("Erro ao atualizar nome da aba")
-      }
-    } catch (error) {
-      toast.error("Erro ao atualizar nome da aba")
-    }
-  }
-
-  const cancelEdit = () => {
-    setEditingTab(null)
-    setEditingName("")
-  }
-
-  const deleteTab = async (tabId: string) => {
-    if (tabs.length <= 1) {
-      toast.error("Não é possível deletar a última aba")
+  const handleEditTab = async () => {
+    if (!editingTab || !newTabName.trim()) {
+      toast.error("Nome da aba é obrigatório")
       return
     }
 
+    setIsLoading(true)
+    try {
+      const tabData = {
+        ...editingTab,
+        name: newTabName.trim(),
+        dashboardType: newTabType,
+      }
+
+      const result = await updateTabAction(tabData)
+
+      if (result.success) {
+        toast.success("Aba atualizada com sucesso!")
+        setIsEditDialogOpen(false)
+        setEditingTab(null)
+        setNewTabName("")
+        onUpdateTabs()
+      } else {
+        toast.error(`Erro ao atualizar aba: ${result.error}`)
+      }
+    } catch (error) {
+      console.error("Error updating tab:", error)
+      toast.error("Erro inesperado ao atualizar aba")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleDeleteTab = async (tabId: string, tabName: string) => {
+    if (!confirm(`Tem certeza que deseja excluir a aba "${tabName}"? Esta ação não pode ser desfeita.`)) {
+      return
+    }
+
+    setIsLoading(true)
     try {
       const result = await deleteTabAction(tabId)
 
       if (result.success) {
-        toast.success("Aba deletada com sucesso!")
-        if (activeTab === tabId) {
-          const remainingTabs = tabs.filter((t) => t.id !== tabId)
-          onSetActiveTab(remainingTabs[0].id)
-        }
+        toast.success("Aba excluída com sucesso!")
         onUpdateTabs()
+
+        // If the deleted tab was active, switch to the first available tab
+        if (activeTab === tabId && tabs.length > 1) {
+          const remainingTabs = tabs.filter((tab) => tab.id !== tabId)
+          if (remainingTabs.length > 0) {
+            onSetActiveTab(remainingTabs[0].id)
+          }
+        }
       } else {
-        toast.error("Erro ao deletar aba")
+        toast.error(`Erro ao excluir aba: ${result.error}`)
       }
     } catch (error) {
-      toast.error("Erro ao deletar aba")
+      console.error("Error deleting tab:", error)
+      toast.error("Erro inesperado ao excluir aba")
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  // Se não é para mostrar ações (página principal), só mostra a seção da aba atual
-  if (!showActions) {
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow duration-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <span className="text-sm text-gray-600">Aba:</span>
-            <span
-              className={`font-medium text-gray-900 transition-all duration-300 ${
-                editingTab === currentTab?.id ? "text-blue-600 scale-105" : "hover:text-blue-600"
-              }`}
-            >
-              "{currentTab?.name}"
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (currentTab) {
-                  setEditingTab(currentTab.id)
-                  setEditingName(currentTab.name)
-                }
-              }}
-              className={`h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200 hover:border-blue-300 group transition-all duration-300 ${
-                editingTab === currentTab?.id ? "scale-110 bg-blue-50 border-blue-300 shadow-md" : "hover:scale-110"
-              }`}
-            >
-              <Edit2
-                className={`w-3 h-3 mr-1 transition-transform duration-300 ${
-                  editingTab === currentTab?.id ? "rotate-12 scale-125" : "group-hover:rotate-12"
-                }`}
-              />
-              <span className="group-hover:scale-105 transition-transform duration-200">Editar Nome</span>
-            </Button>
-          </div>
-
-          <div className="flex items-center space-x-2 relative">
-            {/* BOTÃO PARA CRIAR NOVA ABA */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsCreatingTab(true)}
-              className="h-7 px-3 text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200 hover:border-green-300 hover:scale-110 hover:shadow-md transition-all duration-300 group"
-            >
-              <Plus className="w-3 h-3 mr-1 group-hover:rotate-90 transition-transform duration-200" />
-              <span className="group-hover:scale-105 transition-transform duration-200">Nova Aba</span>
-            </Button>
-
-            {/* Modal inline para criar nova aba */}
-            {isCreatingTab && (
-              <div className="absolute top-full left-0 mt-2 p-3 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[300px]">
-                <div className="flex items-center space-x-2">
-                  <Input
-                    value={newTabName}
-                    onChange={(e) => setNewTabName(e.target.value)}
-                    placeholder="Nome da nova aba..."
-                    className="h-8 flex-1 focus:scale-105 transition-transform duration-200"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") createNewTab()
-                      if (e.key === "Escape") {
-                        setIsCreatingTab(false)
-                        setNewTabName("")
-                      }
-                    }}
-                    autoFocus
-                  />
-                  <Button
-                    size="sm"
-                    onClick={createNewTab}
-                    className="h-8 px-3 bg-green-600 hover:bg-green-700 hover:scale-110 transition-all duration-200"
-                  >
-                    <Check className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setIsCreatingTab(false)
-                      setNewTabName("")
-                    }}
-                    className="h-8 px-3 hover:scale-110 transition-all duration-200"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            <GoogleSheetsImport onImportComplete={onUpdateTabs} />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (currentTab) deleteTab(currentTab.id)
-              }}
-              className="h-7 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 hover:scale-110 hover:shadow-md transition-all duration-300 group"
-              disabled={tabs.length <= 1}
-            >
-              <Trash2 className="w-3 h-3 mr-1 group-hover:rotate-12 transition-transform duration-200" />
-              <span className="group-hover:scale-105 transition-transform duration-200">Excluir</span>
-            </Button>
-          </div>
-        </div>
-
-        {/* Modal de edição inline */}
-        {editingTab === currentTab?.id && (
-          <div className="mt-3 pt-3 border-t border-gray-200 animate-in slide-in-from-top-2 duration-300">
-            <div className="flex items-center space-x-2">
-              <Input
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                className="h-8 flex-1 focus:scale-105 focus:shadow-lg transition-all duration-300 animate-pulse"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") saveTabName(currentTab.id)
-                  if (e.key === "Escape") cancelEdit()
-                }}
-                autoFocus
-                placeholder="Nome da aba"
-              />
-              <Button
-                size="sm"
-                onClick={() => saveTabName(currentTab.id)}
-                className="h-8 hover:scale-125 hover:shadow-lg transition-all duration-300 group bg-green-600 hover:bg-green-700"
-              >
-                <Check className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={cancelEdit}
-                className="h-8 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
-              >
-                <X className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-    )
+  const handleShareTab = (tabId: string) => {
+    const shareUrl = `${window.location.origin}/share/${tabId}`
+    navigator.clipboard.writeText(shareUrl)
+    toast.success("Link de compartilhamento copiado!")
   }
 
-  // Versão completa para admin (showActions=true)
+  const handleExportTab = (tab: TabData) => {
+    const exportData = {
+      tabInfo: {
+        id: tab.id,
+        name: tab.name,
+        dashboardType: tab.dashboardType,
+        columns: tab.columns,
+        exportDate: new Date().toISOString(),
+      },
+      data: tab.rows,
+    }
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" })
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    link.setAttribute("href", url)
+    link.setAttribute("download", `${tab.name}_${new Date().toISOString().split("T")[0]}.json`)
+    link.style.visibility = "hidden"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    toast.success("Aba exportada com sucesso!")
+  }
+
+  const openEditDialog = (tab: TabData) => {
+    setEditingTab(tab)
+    setNewTabName(tab.name)
+    setNewTabType(tab.dashboardType || "rollout")
+    setIsEditDialogOpen(true)
+  }
+
   return (
-    <div className="space-y-8">
-      {/* Existing Tabs */}
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-900">Abas Existentes</h3>
-          <Badge variant="secondary" className="text-sm hover:scale-105 transition-transform duration-200">
-            {tabs.length} {tabs.length === 1 ? "aba" : "abas"}
-          </Badge>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center space-x-2">
+          <Settings className="w-5 h-5 text-gray-600" />
+          <h3 className="text-lg font-semibold">Gerenciar Abas</h3>
+          <Badge variant="outline">{tabs.length} abas</Badge>
         </div>
 
-        <div className="space-y-4">
+        <div className="flex items-center space-x-2">
+          {/* Import Button */}
+          <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="flex items-center space-x-2 bg-transparent">
+                <FileUp className="w-4 h-4" />
+                <span>Importar</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Importar Dados</DialogTitle>
+                <DialogDescription>Escolha como deseja importar seus dados para criar uma nova aba.</DialogDescription>
+              </DialogHeader>
+              <Tabs defaultValue="csv" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="csv">Arquivo CSV</TabsTrigger>
+                  <TabsTrigger value="sheets">Google Sheets</TabsTrigger>
+                </TabsList>
+                <TabsContent value="csv" className="space-y-4">
+                  <CSVImport
+                    onImportComplete={() => {
+                      setIsImportDialogOpen(false)
+                      onUpdateTabs()
+                    }}
+                  />
+                </TabsContent>
+                <TabsContent value="sheets" className="space-y-4">
+                  <GoogleSheetsImport
+                    onImportComplete={() => {
+                      setIsImportDialogOpen(false)
+                      onUpdateTabs()
+                    }}
+                  />
+                </TabsContent>
+              </Tabs>
+            </DialogContent>
+          </Dialog>
+
+          {/* Create Tab Button */}
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4" />
+                <span>Nova Aba</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Criar Nova Aba</DialogTitle>
+                <DialogDescription>
+                  Crie uma nova aba para organizar seus dados. Você pode adicionar colunas personalizadas depois.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="tab-name">Nome da Aba</Label>
+                  <Input
+                    id="tab-name"
+                    placeholder="Digite o nome da aba..."
+                    value={newTabName}
+                    onChange={(e) => setNewTabName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tab-type">Tipo de Dashboard</Label>
+                  <Select value={newTabType} onValueChange={(value: "rollout" | "testing") => setNewTabType(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rollout">
+                        <div className="flex items-center space-x-2">
+                          <Table className="w-4 h-4 text-green-600" />
+                          <span>Rollout</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="testing">
+                        <div className="flex items-center space-x-2">
+                          <TestTube className="w-4 h-4 text-purple-600" />
+                          <span>Testes</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)} disabled={isLoading}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleCreateTab} disabled={isLoading}>
+                  {isLoading ? "Criando..." : "Criar Aba"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* Tabs Grid */}
+      {tabs.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Table className="w-8 h-8 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhuma aba encontrada</h3>
+            <p className="text-gray-600 mb-6">Crie sua primeira aba ou importe dados para começar.</p>
+            <div className="flex justify-center space-x-3">
+              <Button onClick={() => setIsCreateDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4 mr-2" />
+                Criar Primeira Aba
+              </Button>
+              <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+                <FileUp className="w-4 h-4 mr-2" />
+                Importar Dados
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {tabs.map((tab) => {
+            const isActive = tab.id === activeTab
             const isRollout = (tab.dashboardType || "rollout") === "rollout"
 
             return (
-              <div
+              <Card
                 key={tab.id}
-                className="flex items-center justify-between py-2 hover:scale-[1.02] transition-transform duration-200"
+                className={`cursor-pointer transition-all hover:shadow-md ${
+                  isActive ? "ring-2 ring-blue-500 shadow-md" : ""
+                }`}
+                onClick={() => onSetActiveTab(tab.id)}
               >
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-3 h-3 rounded-full transition-all duration-300 ${isRollout ? "bg-green-500 shadow-lg shadow-green-500/50" : "bg-purple-500 shadow-lg shadow-purple-500/50"}`}
-                  />
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <div
+                          className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                            isRollout ? "bg-green-500" : "bg-purple-500"
+                          }`}
+                        />
+                        <h4 className="font-semibold text-gray-900 truncate">{tab.name}</h4>
+                      </div>
 
-                  {editingTab === tab.id ? (
-                    <div className="flex items-center space-x-2 animate-in slide-in-from-left-2 duration-300">
-                      <Input
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        className="h-8 w-48 focus:scale-110 focus:shadow-lg transition-all duration-300 animate-pulse"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveTabName(tab.id)
-                          if (e.key === "Escape") cancelEdit()
-                        }}
-                        autoFocus
-                      />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => saveTabName(tab.id)}
-                        className="h-8 w-8 p-0 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
-                      >
-                        <Check className="w-4 h-4 text-green-600 group-hover:scale-110 transition-transform duration-200" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={cancelEdit}
-                        className="h-8 w-8 p-0 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
-                      >
-                        <X className="w-4 h-4 text-red-600 group-hover:rotate-90 transition-transform duration-200" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-3">
-                      <span className="font-medium text-gray-900 hover:text-blue-600 hover:scale-105 transition-all duration-200">
-                        {tab.name}
-                      </span>
-                      <Badge
-                        variant="default"
-                        className="bg-blue-600 text-white text-xs hover:scale-105 transition-transform duration-200"
-                      >
-                        {isRollout ? "Rollout de Sistema" : "Testes de Integração"}
-                      </Badge>
-                      <span className="text-sm text-gray-500">• {tab.rows.length} registros</span>
-                    </div>
-                  )}
-                </div>
+                      <div className="flex items-center space-x-2 mb-3">
+                        <Badge variant={isRollout ? "default" : "secondary"} className="text-xs">
+                          {isRollout ? (
+                            <>
+                              <Table className="w-3 h-3 mr-1" />
+                              Rollout
+                            </>
+                          ) : (
+                            <>
+                              <TestTube className="w-3 h-3 mr-1" />
+                              Testes
+                            </>
+                          )}
+                        </Badge>
+                        <span className="text-sm text-gray-500">
+                          {Array.isArray(tab.rows) ? tab.rows.length : 0} registros
+                        </span>
+                      </div>
 
-                <div className="flex items-center space-x-2">
-                  {editingTab !== tab.id && (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => startEditTab(tab)}
-                        className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
-                      >
-                        <Edit2 className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteTab(tab.id)}
-                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 hover:scale-125 hover:shadow-lg transition-all duration-300 group"
-                        disabled={tabs.length <= 1}
-                      >
-                        <Trash2 className="w-4 h-4 group-hover:rotate-12 transition-transform duration-200" />
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
+                      {isActive && (
+                        <div className="flex items-center space-x-1 text-xs text-blue-600">
+                          <Eye className="w-3 h-3" />
+                          <span>Aba ativa</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={(e) => e.stopPropagation()}>
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSetActiveTab(tab.id)
+                          }}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          Visualizar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleShareTab(tab.id)
+                          }}
+                        >
+                          <Share2 className="w-4 h-4 mr-2" />
+                          Compartilhar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleExportTab(tab)
+                          }}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Exportar
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openEditDialog(tab)
+                          }}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteTab(tab.id, tab.name)
+                          }}
+                          className="text-red-600 focus:text-red-600"
+                          disabled={isLoading}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </CardContent>
+              </Card>
             )
           })}
         </div>
-      </div>
+      )}
 
-      {/* Create New Tab */}
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">Criar Nova Aba</h3>
-
-        {isCreatingTab ? (
-          <div className="p-4 border-2 border-dashed border-blue-300 bg-blue-50/30 rounded-lg animate-in slide-in-from-top-2 duration-300">
-            <div className="flex items-center space-x-3">
+      {/* Edit Tab Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Aba</DialogTitle>
+            <DialogDescription>Modifique as informações da aba selecionada.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-tab-name">Nome da Aba</Label>
               <Input
+                id="edit-tab-name"
+                placeholder="Digite o nome da aba..."
                 value={newTabName}
                 onChange={(e) => setNewTabName(e.target.value)}
-                placeholder="Nome da nova aba..."
-                className="flex-1 focus:scale-105 focus:shadow-lg transition-all duration-300 animate-pulse"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") createNewTab()
-                  if (e.key === "Escape") {
-                    setIsCreatingTab(false)
-                    setNewTabName("")
-                  }
-                }}
-                autoFocus
               />
-              <Button
-                onClick={createNewTab}
-                size="sm"
-                className="hover:scale-110 hover:shadow-lg transition-all duration-300 group bg-green-600 hover:bg-green-700"
-              >
-                <Plus className="w-4 h-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
-                Criar
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setIsCreatingTab(false)
-                  setNewTabName("")
-                }}
-                className="hover:scale-110 hover:shadow-lg transition-all duration-300 group"
-              >
-                <span className="group-hover:scale-105 transition-transform duration-200">Cancelar</span>
-              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-tab-type">Tipo de Dashboard</Label>
+              <Select value={newTabType} onValueChange={(value: "rollout" | "testing") => setNewTabType(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rollout">
+                    <div className="flex items-center space-x-2">
+                      <Table className="w-4 h-4 text-green-600" />
+                      <span>Rollout</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="testing">
+                    <div className="flex items-center space-x-2">
+                      <TestTube className="w-4 h-4 text-purple-600" />
+                      <span>Testes</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        ) : (
-          <div
-            className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 hover:bg-blue-50/30 hover:scale-105 hover:shadow-lg transition-all duration-300 cursor-pointer group"
-            onClick={() => setIsCreatingTab(true)}
-          >
-            <Plus className="w-6 h-6 mx-auto mb-2 text-gray-400 group-hover:rotate-90 group-hover:scale-125 transition-all duration-300" />
-            <span className="text-gray-600 group-hover:text-blue-600 group-hover:scale-105 transition-all duration-200">
-              Criar Nova Aba
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Import Data */}
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-6">Importar Dados</h3>
-        <div className="mb-3">
-          <GoogleSheetsImport onImportComplete={onUpdateTabs} />
-        </div>
-        <p className="text-sm text-gray-500">
-          Importe dados diretamente do Google Sheets para criar uma nova aba automaticamente.
-        </p>
-      </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={isLoading}>
+              Cancelar
+            </Button>
+            <Button onClick={handleEditTab} disabled={isLoading}>
+              {isLoading ? "Salvando..." : "Salvar Alterações"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

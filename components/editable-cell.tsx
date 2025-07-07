@@ -2,252 +2,187 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Expand, Eye, Copy } from "lucide-react"
+import { CalendarIcon, Check, X } from "lucide-react"
+import { format } from "date-fns"
+import { ptBR } from "date-fns/locale"
 import type { Column } from "../types"
 
 interface EditableCellProps {
   value: any
   column: Column
   onSave: (value: any) => void
+  isEditing?: boolean
 }
 
-export function EditableCell({ value, column, onSave }: EditableCellProps) {
-  const [isEditing, setIsEditing] = useState(false)
+export function EditableCell({ value, column, onSave, isEditing = false }: EditableCellProps) {
+  const [isEditMode, setIsEditMode] = useState(isEditing)
   const [editValue, setEditValue] = useState(value || "")
-  const [originalValue, setOriginalValue] = useState(value || "")
-  const [showFullText, setShowFullText] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
+    value && column.type === "date" ? new Date(value) : undefined,
+  )
 
   useEffect(() => {
     setEditValue(value || "")
-    setOriginalValue(value || "")
-  }, [value])
+    if (column.type === "date" && value) {
+      setSelectedDate(new Date(value))
+    }
+  }, [value, column.type])
 
   useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus()
-    }
-    if (isEditing && textareaRef.current) {
-      textareaRef.current.focus()
-    }
+    setIsEditMode(isEditing)
   }, [isEditing])
 
   const handleSave = () => {
-    // Só salva se o valor realmente mudou
-    if (editValue !== originalValue) {
-      onSave(editValue)
-      setOriginalValue(editValue)
+    let finalValue = editValue
+
+    if (column.type === "date" && selectedDate) {
+      finalValue = format(selectedDate, "yyyy-MM-dd")
+    } else if (column.type === "datetime" && selectedDate) {
+      finalValue = selectedDate.toISOString()
+    } else if (column.type === "number") {
+      finalValue = Number.parseFloat(editValue) || 0
     }
-    setIsEditing(false)
+
+    onSave(finalValue)
+    setIsEditMode(false)
   }
 
   const handleCancel = () => {
-    setEditValue(originalValue)
-    setIsEditing(false)
+    setEditValue(value || "")
+    if (column.type === "date" && value) {
+      setSelectedDate(new Date(value))
+    } else {
+      setSelectedDate(undefined)
+    }
+    setIsEditMode(false)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
+    if (e.key === "Enter") {
       handleSave()
     } else if (e.key === "Escape") {
       handleCancel()
     }
   }
 
-  const handleSelectChange = (newValue: string) => {
-    // Para selects, sempre salva o novo valor
-    onSave(newValue)
-    setOriginalValue(newValue) // Atualiza o valor original
-  }
+  const formatDisplayValue = (val: any) => {
+    if (!val) return ""
 
-  // Função para converter data para formato de input
-  const formatDateForInput = (dateValue: string) => {
-    if (!dateValue) return ""
-
-    // Se já está no formato correto para input (YYYY-MM-DDTHH:MM)
-    if (dateValue.includes("T") && dateValue.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/)) {
-      return dateValue.slice(0, 16) // Remove segundos se houver
-    }
-
-    // Se está no formato brasileiro (DD/MM/YYYY HH:MM)
-    if (dateValue.includes("/")) {
-      const [datePart, timePart] = dateValue.split(" ")
-      if (datePart && timePart) {
-        const [day, month, year] = datePart.split("/")
-        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${timePart}`
-      }
-    }
-
-    return dateValue
-  }
-
-  // Função para converter data do input para formato de exibição
-  const formatDateForDisplay = (inputValue: string) => {
-    if (!inputValue) return ""
-
-    if (inputValue.includes("T")) {
-      const [date, time] = inputValue.split("T")
-      const [year, month, day] = date.split("-")
-      return `${day}/${month}/${year} ${time}`
-    }
-
-    return inputValue
-  }
-
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text || "")
-      // Você pode adicionar um toast aqui se quiser
-    } catch (err) {
-      // Fallback para navegadores mais antigos
-      const textArea = document.createElement("textarea")
-      textArea.value = text || ""
-      document.body.appendChild(textArea)
-      textArea.select()
-      document.execCommand("copy")
-      document.body.removeChild(textArea)
+    switch (column.type) {
+      case "date":
+        try {
+          return format(new Date(val), "dd/MM/yyyy", { locale: ptBR })
+        } catch {
+          return val
+        }
+      case "datetime":
+        try {
+          return format(new Date(val), "dd/MM/yyyy HH:mm", { locale: ptBR })
+        } catch {
+          return val
+        }
+      case "number":
+        return typeof val === "number" ? val.toLocaleString("pt-BR") : val
+      default:
+        return val
     }
   }
 
-  if (column.type === "select") {
+  if (!isEditMode) {
     return (
-      <Select value={value || ""} onValueChange={handleSelectChange}>
-        <SelectTrigger className="h-8 border-0 focus:ring-0 text-xs">
-          <SelectValue placeholder="Selecionar..." />
-        </SelectTrigger>
-        <SelectContent>
-          {column.options?.map((option) => (
-            <SelectItem key={option} value={option}>
-              {option}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    )
-  }
-
-  // Para campos de texto longo (observação, descrição, etc.)
-  const isLongTextField =
-    column.key.toLowerCase().includes("observacao") ||
-    column.key.toLowerCase().includes("descricao") ||
-    (column.width && column.width > 180)
-
-  if (isEditing && isLongTextField) {
-    return (
-      <div className="p-2">
-        <Textarea
-          ref={textareaRef}
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={handleSave}
-          onKeyDown={handleKeyDown}
-          className="min-h-20 max-h-32 resize-none border focus:ring-1 focus:ring-blue-500 text-xs"
-          placeholder="Digite sua observação... (Enter para salvar, Shift+Enter para nova linha)"
-        />
-      </div>
-    )
-  }
-
-  if (isEditing) {
-    const inputType = column.type === "date" ? "date" : column.type === "datetime" ? "datetime-local" : "text"
-    const inputValue = column.type === "datetime" || column.type === "date" ? formatDateForInput(editValue) : editValue
-
-    return (
-      <Input
-        ref={inputRef}
-        value={inputValue}
-        onChange={(e) => {
-          if (column.type === "datetime" || column.type === "date") {
-            setEditValue(e.target.value)
-          } else {
-            setEditValue(e.target.value)
-          }
-        }}
-        onBlur={handleSave}
-        onKeyDown={handleKeyDown}
-        className="h-8 border-0 focus:ring-1 focus:ring-blue-500 text-xs"
-        type={inputType}
-      />
-    )
-  }
-
-  // Renderização para campos de texto longo
-  if (isLongTextField && value && value.length > 30) {
-    const truncatedText = value.substring(0, 30) + "..."
-
-    return (
-      <div className="group relative min-h-8 px-2 py-2 cursor-text hover:bg-gray-50 flex items-center justify-between min-w-0">
-        <span className="text-xs leading-tight flex-1 mr-1" onClick={() => setIsEditing(true)}>
-          {truncatedText}
+      <div
+        className="min-h-[32px] px-2 py-1 cursor-pointer hover:bg-gray-100 rounded transition-colors flex items-center"
+        onClick={() => setIsEditMode(true)}
+        title="Clique para editar"
+      >
+        <span className="truncate">
+          {formatDisplayValue(value) || <span className="text-gray-400 italic">Clique para editar</span>}
         </span>
-        <Popover open={showFullText} onOpenChange={setShowFullText}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Eye className="w-3 h-3" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 max-h-60 overflow-y-auto">
-            <div className="space-y-2">
-              <h4 className="font-medium text-sm">{column.label}</h4>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{value}</p>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setShowFullText(false)
-                  setIsEditing(true)
-                }}
-                className="w-full"
-              >
-                <Expand className="w-3 h-3 mr-1" />
-                Editar
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
       </div>
     )
-  }
-
-  // Formatação especial para datas na exibição
-  let displayValue = value || ""
-  if ((column.type === "datetime" || column.key.toLowerCase().includes("data")) && value) {
-    displayValue = formatDateForDisplay(value)
   }
 
   return (
-    <div
-      className="min-h-8 px-2 py-2 cursor-text hover:bg-gray-50 flex items-center justify-between min-w-0 group"
-      onClick={() => setIsEditing(true)}
-    >
-      <span className="text-xs leading-tight break-words flex-1 truncate" title={displayValue}>
-        {displayValue}
-      </span>
-      {displayValue && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity ml-1"
-          onClick={(e) => {
-            e.stopPropagation()
-            copyToClipboard(displayValue)
-          }}
-          title="Copiar texto"
-        >
-          <Copy className="w-3 h-3" />
+    <div className="flex items-center space-x-1">
+      <div className="flex-1">
+        {column.type === "select" ? (
+          <Select value={editValue} onValueChange={setEditValue}>
+            <SelectTrigger className="h-8">
+              <SelectValue placeholder="Selecione..." />
+            </SelectTrigger>
+            <SelectContent>
+              {column.options?.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : column.type === "date" ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="h-8 w-full justify-start text-left font-normal bg-transparent">
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {selectedDate ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR }) : <span>Selecionar data</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} initialFocus locale={ptBR} />
+            </PopoverContent>
+          </Popover>
+        ) : column.type === "datetime" ? (
+          <div className="space-y-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="h-8 w-full justify-start text-left font-normal bg-transparent">
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {selectedDate ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR }) : <span>Selecionar data</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} initialFocus locale={ptBR} />
+              </PopoverContent>
+            </Popover>
+            <Input
+              type="time"
+              className="h-8"
+              value={selectedDate ? format(selectedDate, "HH:mm") : ""}
+              onChange={(e) => {
+                if (selectedDate && e.target.value) {
+                  const [hours, minutes] = e.target.value.split(":")
+                  const newDate = new Date(selectedDate)
+                  newDate.setHours(Number.parseInt(hours), Number.parseInt(minutes))
+                  setSelectedDate(newDate)
+                }
+              }}
+            />
+          </div>
+        ) : (
+          <Input
+            type={column.type === "number" ? "number" : "text"}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="h-8"
+            autoFocus
+          />
+        )}
+      </div>
+
+      <div className="flex items-center space-x-1">
+        <Button size="sm" onClick={handleSave} className="h-7 w-7 p-0">
+          <Check className="h-3 w-3" />
         </Button>
-      )}
+        <Button size="sm" variant="outline" onClick={handleCancel} className="h-7 w-7 p-0 bg-transparent">
+          <X className="h-3 w-3" />
+        </Button>
+      </div>
     </div>
   )
 }

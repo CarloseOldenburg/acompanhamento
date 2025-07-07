@@ -1,56 +1,70 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import type { TabData } from "../types"
 import { getTabsAction } from "../app/actions"
+import type { TabData } from "../types"
 
-export function useOptimizedData() {
+interface UseOptimizedDataReturn {
+  tabs: TabData[]
+  loading: boolean
+  error: string | null
+  refreshData: () => Promise<void>
+}
+
+export function useOptimizedData(): UseOptimizedDataReturn {
   const [tabs, setTabs] = useState<TabData[]>([])
   const [loading, setLoading] = useState(true)
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const refreshData = useCallback(async () => {
+  const loadTabs = useCallback(async () => {
     try {
       setLoading(true)
+      setError(null)
+
       const result = await getTabsAction()
 
-      console.log("🔄 useOptimizedData - resultado:", result)
+      if (result.success && Array.isArray(result.data)) {
+        // Validar e filtrar dados válidos
+        const validTabs = result.data.filter((tab): tab is TabData => {
+          return (
+            tab &&
+            typeof tab === "object" &&
+            typeof tab.id === "string" &&
+            typeof tab.name === "string" &&
+            Array.isArray(tab.rows) &&
+            Array.isArray(tab.columns)
+          )
+        })
 
-      // Verificar se o resultado tem o formato correto
-      if (result && result.success && Array.isArray(result.tabs)) {
-        console.log("✅ useOptimizedData - tabs encontradas:", result.tabs.length)
-        setTabs(result.tabs)
-      } else if (Array.isArray(result)) {
-        // Fallback para formato antigo (array direto)
-        console.log("✅ useOptimizedData - formato antigo, tabs:", result.length)
-        setTabs(result)
+        setTabs(validTabs)
       } else {
-        console.error("❌ useOptimizedData - formato inválido:", result)
+        console.warn("⚠️ Invalid tabs data received:", result)
         setTabs([])
+        if (!result.success) {
+          setError(result.error || "Erro ao carregar dados")
+        }
       }
-
-      setLastUpdate(new Date())
-    } catch (error) {
-      console.error("💥 useOptimizedData - erro:", error)
+    } catch (err) {
+      console.error("❌ Error loading tabs:", err)
+      setError(err instanceof Error ? err.message : "Erro inesperado ao carregar dados")
       setTabs([])
     } finally {
       setLoading(false)
     }
   }, [])
 
+  const refreshData = useCallback(async () => {
+    await loadTabs()
+  }, [loadTabs])
+
   useEffect(() => {
-    refreshData()
-
-    // Refresh data every 30 seconds (optimized interval)
-    const interval = setInterval(refreshData, 30000)
-
-    return () => clearInterval(interval)
-  }, [refreshData])
+    loadTabs()
+  }, [loadTabs])
 
   return {
     tabs,
     loading,
-    lastUpdate,
+    error,
     refreshData,
   }
 }

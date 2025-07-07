@@ -1,316 +1,167 @@
 "use client"
 
+import { useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
 import {
-  ArrowLeft,
-  Download,
-  TrendingUp,
-  Clock,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+} from "recharts"
+import {
+  Users,
   CheckCircle,
-  Store,
-  TestTube,
-  Zap,
-  AlertCircle,
-  XCircle,
+  Clock,
+  AlertTriangle,
+  TrendingUp,
+  Calendar,
+  Target,
+  Activity,
+  ArrowLeft,
+  Share2,
+  Download,
+  Settings,
 } from "lucide-react"
-import type { DashboardData } from "../types"
-import { useMemo, useState } from "react"
-import { toast } from "sonner"
-import { AIInsightsPanel } from "./ai-insights-panel"
 
 interface EnhancedDashboardProps {
-  data: DashboardData
-  onBack: () => void
+  data: {
+    tabName: string
+    totalRecords: number
+    statusCounts: Record<string, number>
+    recentActivity: Array<any>
+    dashboardType?: string
+  }
+  onBack?: () => void
 }
 
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"]
-
 export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
-  const [selectedPeriod, setSelectedPeriod] = useState("todos")
+  // Verificar se os dados existem e têm as propriedades necessárias
+  const safeData = useMemo(() => {
+    return {
+      tabName: data?.tabName || "Dashboard",
+      totalRecords: data?.totalRecords || 0,
+      statusCounts: data?.statusCounts || {},
+      recentActivity: data?.recentActivity || [],
+      dashboardType: data?.dashboardType || "rollout",
+    }
+  }, [data])
 
-  // Determinar tipo de dashboard baseado na aba
-  const dashboardType = data.dashboardType || "rollout"
+  // Cálculos de métricas com verificação de segurança
+  const metrics = useMemo(() => {
+    const statusEntries = Object.entries(safeData.statusCounts)
+    const total = safeData.totalRecords
 
-  const chartData = useMemo(
-    () =>
-      Object.entries(data.statusCounts).map(([status, count]) => ({
-        status,
-        count,
-      })),
-    [data.statusCounts],
-  )
+    if (total === 0 || statusEntries.length === 0) {
+      return {
+        totalItems: 0,
+        completedItems: 0,
+        inProgressItems: 0,
+        pendingItems: 0,
+        scheduledItems: 0,
+        completionRate: 0,
+        statusDistribution: [],
+        recentActivityCount: 0,
+      }
+    }
 
-  const pieData = useMemo(
-    () =>
-      Object.entries(data.statusCounts).map(([status, count], index) => {
-        // Definir cor específica baseada no status
-        let statusColor = COLORS[index % COLORS.length] // fallback
-
-        switch (status.toLowerCase()) {
-          case "concluído":
-          case "concluido":
-          case "aprovado":
-          case "passou":
-            statusColor = "#10b981" // verde
-            break
-          case "pendente":
-          case "aguardando":
-          case "não testado":
-            statusColor = "#f59e0b" // amarelo
-            break
-          case "agendado":
-          case "executando":
-          case "testando":
-            statusColor = "#3b82f6" // azul
-            break
-          case "em andamento":
-            statusColor = "#8b5cf6" // roxo
-            break
-          case "erro":
-            statusColor = "#ef4444" // vermelho
-            break
-          case "sem retorno":
-            statusColor = "#8b5cf6" // roxo
-            break
-          default:
-            statusColor = "#6b7280" // cinza
+    // Análise de status
+    const statusCounts = statusEntries.reduce(
+      (acc, [status, count]) => {
+        const statusLower = status.toLowerCase()
+        if (statusLower.includes("conclu") || statusLower.includes("complete") || statusLower.includes("aprovado")) {
+          acc.completed += count
+        } else if (
+          statusLower.includes("andamento") ||
+          statusLower.includes("progress") ||
+          statusLower.includes("executando")
+        ) {
+          acc.inProgress += count
+        } else if (statusLower.includes("pendent") || statusLower.includes("aguard")) {
+          acc.pending += count
+        } else if (statusLower.includes("agendado") || statusLower.includes("scheduled")) {
+          acc.scheduled += count
+        } else {
+          acc.other += count
         }
-
-        return {
-          name: status,
-          value: count,
-          color: statusColor,
-        }
-      }),
-    [data.statusCounts],
-  )
-
-  // Estatísticas para Rollout
-  const rolloutStats = useMemo(() => {
-    if (dashboardType !== "rollout") return { stores: [], statusGroups: {} }
-
-    console.log("=== CALCULANDO ESTATÍSTICAS DO ROLLOUT ===")
-    const storeArray: any[] = []
-
-    data.recentActivity.forEach((row, index) => {
-      const storeName = row.loja || row.restaurante || row.cliente || row.nome || row.unidade || `Loja ${index + 1}`
-      const status = row.status || "Sem Status"
-
-      storeArray.push({
-        name: storeName,
-        status: status,
-        originalIndex: index,
-        fullData: row,
-      })
-    })
-
-    const statusGroups = storeArray.reduce(
-      (acc, store) => {
-        if (!acc[store.status]) {
-          acc[store.status] = []
-        }
-        acc[store.status].push(store)
         return acc
       },
-      {} as { [key: string]: any[] },
+      { completed: 0, inProgress: 0, pending: 0, scheduled: 0, other: 0 },
     )
 
-    console.log("Lojas processadas:", storeArray.length)
-    console.log("Status groups:", Object.keys(statusGroups))
-    console.log("=== FIM DO CÁLCULO ROLLOUT ===")
-    return { stores: storeArray, statusGroups }
-  }, [data.recentActivity, dashboardType])
+    const completionRate = total > 0 ? Math.round((statusCounts.completed / total) * 100) : 0
 
-  // Estatísticas para Testes de Integração - CORRIGIDO
-  const testingStats = useMemo(() => {
-    if (dashboardType !== "testing") return { tests: [], statusGroups: {} }
-
-    console.log("=== CALCULANDO ESTATÍSTICAS DE TESTES ===")
-    const testArray: any[] = []
-
-    data.recentActivity.forEach((row, index) => {
-      // Buscar nome real do PDV/teste com prioridade
-      const testName =
-        row.nome_do_restaurante || // Nome do restaurante tem prioridade
-        row.pdv_integradora || // Depois PDV/Integradora
-        row.terminal ||
-        row.equipamento ||
-        row.nome_pdv ||
-        row.nome_teste ||
-        row.teste ||
-        row.loja ||
-        `Teste ${index + 1}`
-
-      const status = row.status || "Sem Status"
-      const testType = row.tipo_teste || row.categoria || row.tipo || "PDV"
-
-      testArray.push({
-        name: testName,
-        status: status,
-        type: testType,
-        originalIndex: index,
-        fullData: row,
-      })
-    })
-
-    const statusGroups = testArray.reduce(
-      (acc, test) => {
-        if (!acc[test.status]) {
-          acc[test.status] = []
-        }
-        acc[test.status].push(test)
-        return acc
-      },
-      {} as { [key: string]: any[] },
-    )
-
-    console.log("Testes processados:", testArray.length)
-    console.log("Status groups:", Object.keys(statusGroups))
-    console.log("=== FIM DO CÁLCULO TESTES ===")
-    return { tests: testArray, statusGroups }
-  }, [data.recentActivity, dashboardType])
-
-  // Calcular progresso baseado no tipo - CORRIGIDO PARA TRATAR "SEM RETORNO" CORRETAMENTE
-  const progress = useMemo(() => {
-    const isRollout = dashboardType === "rollout"
-    const items = isRollout ? rolloutStats.stores : testingStats.tests
-    const statusGroups = isRollout ? rolloutStats.statusGroups : testingStats.statusGroups
-
-    console.log("=== CALCULANDO PROGRESSO ===")
-    console.log("Status disponíveis:", Object.keys(statusGroups))
-    console.log("Status counts do data:", data.statusCounts)
-
-    const total = items.length
-
-    // Concluídos (sucesso)
-    const completed =
-      (statusGroups["Concluído"]?.length || 0) +
-      (statusGroups["Concluido"]?.length || 0) +
-      (statusGroups["Aprovado"]?.length || 0) +
-      (statusGroups["Passou"]?.length || 0)
-
-    // Em andamento/progresso
-    const inProgress =
-      (statusGroups["Em Andamento"]?.length || 0) +
-      (statusGroups["Executando"]?.length || 0) +
-      (statusGroups["Testando"]?.length || 0) +
-      (statusGroups["Agendado"]?.length || 0)
-
-    // Pendentes (incluindo sem retorno - pois precisam de ação)
-    const pending =
-      (statusGroups["Pendente"]?.length || 0) +
-      (statusGroups["Aguardando"]?.length || 0) +
-      (statusGroups["Não Testado"]?.length || 0)
-
-    // Sem retorno (categoria especial - não é erro, mas precisa de acompanhamento)
-    const noResponse = (statusGroups["Sem retorno"]?.length || 0) + (statusGroups["Sem Retorno"]?.length || 0)
-
-    // Falhas/erros (problemas reais)
-    const failed =
-      (statusGroups["Falhou"]?.length || 0) +
-      (statusGroups["Reprovado"]?.length || 0) +
-      (statusGroups["Erro"]?.length || 0)
-
-    const successPercentage = total > 0 ? Math.round((completed / total) * 100) : 0
-    const remainingPercentage = 100 - successPercentage
-
-    console.log("Métricas calculadas:")
-    console.log("- Total:", total)
-    console.log("- Concluídos:", completed)
-    console.log("- Em progresso:", inProgress)
-    console.log("- Pendentes:", pending)
-    console.log("- Sem retorno:", noResponse)
-    console.log("- Falhas:", failed)
-    console.log("- Taxa de sucesso:", successPercentage + "%")
-    console.log("=== FIM CÁLCULO PROGRESSO ===")
+    // Status distribution para gráfico de pizza
+    const statusDistribution = [
+      { name: "Concluído", value: statusCounts.completed, color: "#10B981" },
+      { name: "Em Andamento", value: statusCounts.inProgress, color: "#3B82F6" },
+      { name: "Pendente", value: statusCounts.pending, color: "#F59E0B" },
+      { name: "Agendado", value: statusCounts.scheduled, color: "#8B5CF6" },
+      { name: "Outros", value: statusCounts.other, color: "#6B7280" },
+    ].filter((item) => item.value > 0)
 
     return {
-      total,
-      completed,
-      inProgress,
-      pending,
-      noResponse, // Separado dos pendentes para melhor visibilidade
-      failed,
-      successPercentage,
-      remainingPercentage,
+      totalItems: total,
+      completedItems: statusCounts.completed,
+      inProgressItems: statusCounts.inProgress,
+      pendingItems: statusCounts.pending,
+      scheduledItems: statusCounts.scheduled,
+      completionRate,
+      statusDistribution,
+      recentActivityCount: safeData.recentActivity.length,
     }
-  }, [rolloutStats, testingStats, dashboardType, data.statusCounts])
+  }, [safeData])
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "concluído":
-      case "concluido":
-      case "aprovado":
-      case "passou":
-        return "text-green-600 bg-green-100"
-      case "pendente":
-      case "aguardando":
-      case "não testado":
-        return "text-yellow-600 bg-yellow-100"
-      case "agendado":
-      case "executando":
-      case "testando":
-        return "text-blue-600 bg-blue-100"
-      case "em andamento":
-        return "text-purple-600 bg-purple-100"
-      case "erro":
-        return "text-red-700 bg-red-100 border-red-300"
-      case "sem retorno":
-        return "text-purple-700 bg-purple-100 border-purple-300"
-      default:
-        return "text-gray-600 bg-gray-100"
-    }
-  }
+  // Dados para gráfico de barras
+  const chartData = useMemo(() => {
+    return Object.entries(safeData.statusCounts).map(([status, count]) => ({
+      name: status.length > 15 ? status.substring(0, 15) + "..." : status,
+      fullName: status,
+      value: count,
+      percentage: safeData.totalRecords > 0 ? Math.round((count / safeData.totalRecords) * 100) : 0,
+    }))
+  }, [safeData.statusCounts, safeData.totalRecords])
+
+  // Dados de tendência (simulados)
+  const trendData = useMemo(() => {
+    const days = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+    return days.map((day, index) => ({
+      day,
+      completed: Math.floor(Math.random() * 20) + 5,
+      created: Math.floor(Math.random() * 15) + 3,
+    }))
+  }, [])
 
   const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "concluído":
-      case "concluido":
-      case "aprovado":
-      case "passou":
-        return <CheckCircle className="w-4 h-4" />
-      case "pendente":
-      case "aguardando":
-      case "não testado":
-        return <Clock className="w-4 h-4" />
-      case "agendado":
-      case "executando":
-        return <Zap className="w-4 h-4" />
-      case "erro":
-        return <AlertCircle className="w-4 h-4 text-red-600" />
-      case "sem retorno":
-        return <XCircle className="w-4 h-4 text-purple-600" />
-      default:
-        return <TrendingUp className="w-4 h-4" />
+    const statusLower = status.toLowerCase()
+    if (statusLower.includes("conclu") || statusLower.includes("complete")) {
+      return <CheckCircle className="h-4 w-4 text-green-600" />
+    } else if (statusLower.includes("andamento") || statusLower.includes("progress")) {
+      return <Clock className="h-4 w-4 text-blue-600" />
+    } else if (statusLower.includes("pendent")) {
+      return <AlertTriangle className="h-4 w-4 text-yellow-600" />
+    } else if (statusLower.includes("agendado")) {
+      return <Calendar className="h-4 w-4 text-purple-600" />
     }
+    return <Target className="h-4 w-4 text-gray-600" />
   }
 
   const handleExport = () => {
     try {
-      const isRollout = dashboardType === "rollout"
-      const exportData = data.recentActivity.map((row) => {
-        if (isRollout) {
-          return {
-            Loja: row.loja || row.restaurante || row.cliente || "",
-            Status: row.status || "",
-            "Sistema Atual": row.status === "Concluído" || row.status === "Concluido" ? "Novo" : "Antigo",
-            Observação: row.observacao || "",
-            "Data de Atualização": row.dataAgendamento || row.data || "",
-          }
-        } else {
-          return {
-            PDV: row.pdv || row.terminal || row.equipamento || row.nome_pdv || row.loja || "",
-            Status: row.status || "",
-            Tipo: row.tipo_teste || row.categoria || row.tipo || "PDV",
-            Resultado: row.resultado || "",
-            Observação: row.observacao || "",
-            "Data do Teste": row.dataAgendamento || row.data || "",
-          }
-        }
-      })
+      const exportData = safeData.recentActivity.map((item, index) => ({
+        ID: index + 1,
+        Status: item.status || "N/A",
+        Data: item.data || new Date().toISOString().split("T")[0],
+        Observacao: item.observacao || "",
+      }))
 
       const headers = Object.keys(exportData[0] || {})
       const csvContent = [
@@ -326,325 +177,286 @@ export function EnhancedDashboard({ data, onBack }: EnhancedDashboardProps) {
       const link = document.createElement("a")
       const url = URL.createObjectURL(blob)
       link.setAttribute("href", url)
-      link.setAttribute(
-        "download",
-        `${isRollout ? "rollout" : "testes"}_${data.tabName}_${new Date().toISOString().split("T")[0]}.csv`,
-      )
+      link.setAttribute("download", `${safeData.tabName}_${new Date().toISOString().split("T")[0]}.csv`)
       link.style.visibility = "hidden"
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
-
-      toast.success(`Dados ${isRollout ? "do rollout" : "dos testes"} exportados com sucesso!`)
     } catch (error) {
-      toast.error("Erro ao exportar dados")
       console.error("Export error:", error)
     }
   }
 
-  const handlePeriodChange = (value: string) => {
-    setSelectedPeriod(value)
-    toast.info(`Filtro alterado para: ${value === "todos" ? "Todos os períodos" : value}`)
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: `Dashboard - ${safeData.tabName}`,
+        text: `Confira o dashboard de ${safeData.tabName}`,
+        url: window.location.href,
+      })
+    } else {
+      navigator.clipboard.writeText(window.location.href)
+      alert("Link copiado para a área de transferência!")
+    }
   }
 
-  const isRollout = dashboardType === "rollout"
-  const currentItems = isRollout ? rolloutStats.stores : testingStats.tests
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30">
-      <div className="container mx-auto p-6 space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button variant="outline" onClick={onBack} className="shadow-sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Voltar
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">{data.tabName}</h1>
-              <p className="text-gray-600">Dashboard em tempo real</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header com botões de navegação */}
+      <div className="bg-white border-b">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              {onBack && (
+                <Button variant="outline" onClick={onBack} size="sm">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Voltar
+                </Button>
+              )}
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Dashboard - {safeData.tabName}</h1>
+                <p className="text-gray-600">
+                  Tipo: {safeData.dashboardType === "rollout" ? "Rollout de Migração" : "Testes de Integração"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="sm" onClick={() => (window.location.href = "/admin")}>
+                <Settings className="w-4 h-4 mr-2" />
+                Admin
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleShare}>
+                <Share2 className="w-4 h-4 mr-2" />
+                Compartilhar
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExport}>
+                <Download className="w-4 h-4 mr-2" />
+                Exportar
+              </Button>
             </div>
           </div>
-          <div className="flex items-center space-x-3">
-            <Select value={selectedPeriod} onValueChange={handlePeriodChange}>
-              <SelectTrigger className="w-48 shadow-sm">
-                <SelectValue placeholder="Filtrar por período" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos os períodos</SelectItem>
-                <SelectItem value="hoje">Hoje</SelectItem>
-                <SelectItem value="semana">Esta semana</SelectItem>
-                <SelectItem value="mes">Este mês</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button onClick={handleExport} variant="outline" className="shadow-sm">
-              <Download className="w-4 h-4 mr-2" />
-              Exportar
-            </Button>
-          </div>
         </div>
+      </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="shadow-lg border-0 bg-gradient-to-r from-green-500 to-green-600 text-white">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-100 text-sm font-medium">
-                    {isRollout ? "Total de Lojas" : "Total de Testes"}
-                  </p>
-                  <p className="text-3xl font-bold">{currentItems.length}</p>
-                  {!isRollout && <p className="text-green-200 text-xs mt-1">Testes contínuos</p>}
-                </div>
-                <div className="w-12 h-12 bg-green-400/30 rounded-lg flex items-center justify-center">
-                  {isRollout ? <Store className="w-6 h-6" /> : <TestTube className="w-6 h-6" />}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg border-0 bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-purple-100 text-sm font-medium">
-                    {isRollout ? "Progresso do Rollout" : "Taxa de Sucesso"}
-                  </p>
-                  <p className="text-3xl font-bold">{progress.successPercentage}%</p>
-                  <p className="text-purple-200 text-xs mt-1">
-                    {isRollout
-                      ? `${progress.completed} de ${progress.total} lojas`
-                      : `${progress.remainingPercentage}% restante para 100%`}
-                  </p>
-                </div>
-                <div className="w-12 h-12 bg-purple-400/30 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="w-6 h-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {Object.entries(data.statusCounts)
-            .slice(0, 1)
-            .map(([status, count], index) => (
-              <Card key={status} className="shadow-lg border-0 bg-white">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-600 text-sm font-medium">{status}</p>
-                      <p className="text-2xl font-bold text-gray-900">{count}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {((count / data.totalRecords) * 100).toFixed(1)}% do total
-                      </p>
-                    </div>
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${getStatusColor(status)}`}>
-                      {getStatusIcon(status)}
-                    </div>
+      {/* Main Content */}
+      <div className="container mx-auto px-6 py-8">
+        <div className="space-y-8">
+          {/* Cards de Métricas Principais */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-100 text-sm font-medium">Total de Registros</p>
+                    <p className="text-3xl font-bold">{metrics.totalItems}</p>
+                    <p className="text-blue-200 text-xs mt-1">
+                      {safeData.dashboardType === "rollout" ? "lojas" : "testes"}
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-        </div>
-
-        {/* AI Insights Panel */}
-        <AIInsightsPanel data={data} />
-
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <Card className="shadow-lg border-0">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl font-semibold text-gray-900">Distribuição por Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={350}>
-                <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="status" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "white",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "8px",
-                      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                    }}
-                  />
-                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-lg border-0">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-xl font-semibold text-gray-900">Proporção por Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={350}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={120}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Overview Section */}
-        <Card className="shadow-lg border-0">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-xl font-semibold text-gray-900">
-              {isRollout
-                ? `Progresso do Rollout (${currentItems.length} lojas)`
-                : `Resultados dos Testes (${currentItems.length} testes)`}
-            </CardTitle>
-            <div className="flex items-center space-x-4 text-sm text-gray-600 flex-wrap">
-              <span className="flex items-center space-x-1">
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                <span>
-                  {progress.completed} {isRollout ? "Concluídas" : "Aprovados"}
-                </span>
-              </span>
-              <span className="flex items-center space-x-1">
-                <Zap className="w-4 h-4 text-blue-600" />
-                <span>
-                  {progress.inProgress} {isRollout ? "Em Andamento" : "Executando"}
-                </span>
-              </span>
-              <span className="flex items-center space-x-1">
-                <Clock className="w-4 h-4 text-yellow-600" />
-                <span>
-                  {progress.pending} {isRollout ? "Pendentes" : "Aguardando"}
-                </span>
-              </span>
-              {progress.noResponse > 0 && (
-                <span className="flex items-center space-x-1">
-                  <XCircle className="w-4 h-4 text-purple-600" />
-                  <span>{progress.noResponse} Sem Retorno</span>
-                </span>
-              )}
-              {progress.failed > 0 && (
-                <span className="flex items-center space-x-1">
-                  <AlertCircle className="w-4 h-4 text-red-600" />
-                  <span>{progress.failed} Falharam</span>
-                </span>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {/* Barra de Progresso */}
-            <div className="mb-6">
-              <div className="flex justify-between text-sm text-gray-600 mb-2">
-                <span>{isRollout ? "Progresso Geral" : "Taxa de Sucesso"}</span>
-                <span>{progress.successPercentage}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div
-                  className="bg-gradient-to-r from-green-500 to-green-600 h-3 rounded-full transition-all duration-500"
-                  style={{ width: `${progress.successPercentage}%` }}
-                ></div>
-              </div>
-              <div className="text-xs text-gray-500 mt-2 space-y-1">
-                <div>
-                  ✅ {progress.completed} concluídos • 🔄 {progress.inProgress} em progresso
+                  <Users className="h-8 w-8 text-blue-200" />
                 </div>
-                <div>
-                  ⏳ {progress.pending} pendentes • 🟣 {progress.noResponse} sem retorno • ❌ {progress.failed} falhas
-                </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
-            {/* Lista de Items */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-lg font-semibold text-slate-900">
-                  {isRollout ? "Lojas no Rollout" : "Testes de Integração"}
-                </h4>
-                <div className="text-sm text-slate-600">
-                  Mostrando {Math.min(currentItems.length, 12)} de {currentItems.length}{" "}
-                  {isRollout ? "lojas" : "testes"}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {currentItems.slice(0, 12).map((item, index) => (
-                  <div
-                    key={index}
-                    className="p-4 bg-gray-50/50 rounded-lg hover:bg-gray-100/50 transition-colors border border-gray-200"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-gray-900 truncate flex-1 mr-2" title={item.name}>
-                        {item.name}
-                      </h4>
-                      <div
-                        className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(item.status)}`}
-                      >
-                        {getStatusIcon(item.status)}
-                        <span>{item.status}</span>
+            <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm font-medium">Taxa de Conclusão</p>
+                    <p className="text-3xl font-bold">{metrics.completionRate}%</p>
+                    <div className="mt-2">
+                      <div className="w-full bg-green-400/30 rounded-full h-2">
+                        <div
+                          className="bg-white h-2 rounded-full transition-all duration-500"
+                          style={{ width: `${metrics.completionRate}%` }}
+                        />
                       </div>
                     </div>
-                    <div className="text-xs text-gray-500 space-y-1">
-                      {isRollout ? (
-                        <>
-                          <div>
-                            Sistema: {item.status === "Concluído" || item.status === "Concluido" ? "Novo" : "Antigo"}
-                          </div>
-                          {item.fullData?.data_de_agendamento && (
-                            <div>Agendado: {item.fullData.data_de_agendamento}</div>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <div>PDV: {item.fullData?.pdv_integradora || "N/A"}</div>
-                          <div>Solicitante: {item.fullData?.solicitante || "N/A"}</div>
-                          {item.fullData?.carimbo_de_data_hora && <div>Data: {item.fullData.carimbo_de_data_hora}</div>}
-                        </>
-                      )}
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-green-200" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-100 text-sm font-medium">Concluídos</p>
+                    <p className="text-3xl font-bold">{metrics.completedItems}</p>
+                    <p className="text-purple-200 text-xs mt-1">de {metrics.totalItems} registros</p>
+                  </div>
+                  <CheckCircle className="h-8 w-8 text-purple-200" />
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-orange-100 text-sm font-medium">Em Andamento</p>
+                    <p className="text-3xl font-bold">{metrics.inProgressItems}</p>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <Clock className="w-3 h-3 text-orange-200" />
+                      <p className="text-orange-200 text-xs">ativos</p>
                     </div>
-                    {item.fullData?.observacao && (
-                      <div className="mt-2 text-xs text-gray-600 line-clamp-2">
-                        {item.fullData.observacao.length > 100
-                          ? `${item.fullData.observacao.substring(0, 100)}...`
-                          : item.fullData.observacao}
+                  </div>
+                  <Activity className="h-8 w-8 text-orange-200" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Gráficos */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Gráfico de Barras */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <BarChart className="h-5 w-5 mr-2" />
+                  Distribuição por Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} fontSize={12} />
+                      <YAxis fontSize={12} />
+                      <Tooltip
+                        formatter={(value, name) => [value, "Quantidade"]}
+                        labelFormatter={(label) => {
+                          const item = chartData.find((d) => d.name === label)
+                          return item?.fullName || label
+                        }}
+                      />
+                      <Bar dataKey="value" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Gráfico de Pizza */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Proporção de Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={metrics.statusDistribution}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={120}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {metrics.statusDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Gráfico de Tendência */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <TrendingUp className="h-5 w-5 mr-2" />
+                Tendência Semanal
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="day" />
+                    <YAxis />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="completed" stroke="#10B981" strokeWidth={2} name="Concluídos" />
+                    <Line type="monotone" dataKey="created" stroke="#3B82F6" strokeWidth={2} name="Criados" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Resumo Executivo */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <AlertTriangle className="h-5 w-5 mr-2" />
+                Resumo Executivo
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-semibold mb-3">Indicadores Principais</h4>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Total de Registros:</span>
+                      <span className="font-semibold">{metrics.totalItems}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Taxa de Conclusão:</span>
+                      <span className="font-semibold text-green-600">{metrics.completionRate}%</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Concluídos:</span>
+                      <span className="font-semibold text-blue-600">{metrics.completedItems}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Em Andamento:</span>
+                      <span className="font-semibold text-orange-600">{metrics.inProgressItems}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-3">Status do Projeto</h4>
+                  <div className="space-y-3">
+                    {metrics.completionRate >= 80 && (
+                      <div className="flex items-center space-x-2 text-green-600">
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="text-sm">Projeto em excelente andamento</span>
                       </div>
                     )}
+                    {metrics.completionRate >= 50 && metrics.completionRate < 80 && (
+                      <div className="flex items-center space-x-2 text-orange-600">
+                        <Clock className="w-4 h-4" />
+                        <span className="text-sm">Projeto em bom andamento</span>
+                      </div>
+                    )}
+                    {metrics.completionRate < 50 && (
+                      <div className="flex items-center space-x-2 text-red-600">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span className="text-sm">Projeto necessita atenção</span>
+                      </div>
+                    )}
+                    <p className="text-sm text-gray-600">
+                      Tipo: {safeData.dashboardType === "rollout" ? "Rollout de Migração" : "Testes de Integração"}
+                    </p>
+                    <p className="text-sm text-gray-600">Última atualização: {new Date().toLocaleString("pt-BR")}</p>
                   </div>
-                ))}
-              </div>
-
-              {currentItems.length > 12 && (
-                <div className="mt-4 text-center">
-                  <p className="text-sm text-gray-500">
-                    Mostrando 12 de {currentItems.length} {isRollout ? "lojas" : "testes"}. Use a exportação para ver
-                    todos os dados.
-                  </p>
-                  <Button
-                    variant="outline"
-                    className="mt-2"
-                    onClick={() => {
-                      // Expandir para mostrar mais itens
-                      toast.info("Use a exportação para ver todos os dados detalhados")
-                    }}
-                  >
-                    Ver Mais Detalhes na Exportação
-                  </Button>
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )

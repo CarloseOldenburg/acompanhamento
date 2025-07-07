@@ -301,71 +301,190 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
   const executiveAlerts = useMemo(() => {
     const alerts = []
     const metrics = executiveMetrics.statusBreakdown
+    const currentHour = new Date().getHours()
+    const isBusinessHours = currentHour >= 8 && currentHour <= 18
 
     if (isRollout) {
-      if (metrics.noResponseRate > 25) {
+      // Alertas específicos para ROLLOUT
+      if (metrics.noResponseRate > 30) {
         alerts.push({
           type: "critical",
-          title: "Cronograma em Risco",
-          message: `${metrics.noResponseRate.toFixed(0)}% das lojas sem confirmação`,
-          action: "Estabelecer prazo limite de 48h",
-          impact: "Alto risco de atraso no cronograma",
+          title: "Cronograma Severamente Comprometido",
+          message: `${metrics.noResponseRate.toFixed(0)}% das lojas (${metrics.noResponse} unidades) sem confirmação há mais de 48h`,
+          action:
+            "Convocar reunião de emergência com gerência regional e estabelecer prazo limite de 24h para todas as lojas pendentes",
+          impact:
+            "Risco alto de não cumprimento do cronograma de migração, possível atraso de 2-3 semanas no desligamento do sistema antigo",
+          urgency: "IMEDIATA",
+          responsible: "Gerência Regional + Diretoria",
+          estimatedCost: "R$ 50k-100k em custos adicionais de manutenção do sistema antigo",
+        })
+      } else if (metrics.noResponseRate > 25) {
+        alerts.push({
+          type: "critical",
+          title: "Cronograma em Risco Crítico",
+          message: `${metrics.noResponseRate.toFixed(0)}% das lojas sem confirmação compromete cronograma`,
+          action: "Estabelecer prazo limite de 48h e ativar suporte presencial para lojas críticas",
+          impact: "Risco médio-alto de atraso no cronograma, possível extensão de 1-2 semanas",
+          urgency: "24 HORAS",
+          responsible: "Coordenação de Rollout",
+          estimatedCost: "R$ 20k-40k em recursos adicionais",
         })
       }
 
-      if (metrics.completionRate > 80) {
+      if (metrics.completionRate > 85) {
+        alerts.push({
+          type: "success",
+          title: "Rollout Quase Finalizado - Sucesso!",
+          message: `${metrics.completed} de ${metrics.total} lojas migradas com sucesso (${metrics.completionRate.toFixed(0)}%)`,
+          action: "Iniciar preparativos para desativação do sistema antigo e comunicar sucesso à diretoria",
+          impact: "Cronograma cumprido com sucesso, economia estimada de R$ 30k/mês com desligamento antecipado",
+          urgency: "1 SEMANA",
+          responsible: "Coordenação de Rollout",
+          estimatedCost: "Economia de R$ 30k/mês",
+        })
+      } else if (metrics.completionRate > 80) {
         alerts.push({
           type: "success",
           title: "Reta Final do Rollout",
-          message: `${metrics.completed} de ${metrics.total} lojas migradas`,
-          action: "Agendar desativação do sistema antigo",
-          impact: "Cronograma dentro do prazo",
+          message: `${metrics.completed} de ${metrics.total} lojas migradas - apenas ${metrics.total - metrics.completed} restantes`,
+          action: "Focar recursos nas últimas lojas e agendar desativação do sistema antigo para próxima semana",
+          impact: "Cronograma dentro do prazo, possível conclusão antecipada em 3-5 dias",
+          urgency: "3-5 DIAS",
+          responsible: "Coordenação de Rollout",
+          estimatedCost: "Dentro do orçamento previsto",
         })
       }
 
-      if (metrics.completionRate < 50 && metrics.noResponseRate < 25) {
+      if (metrics.completionRate < 40 && metrics.noResponseRate < 25) {
         alerts.push({
           type: "warning",
-          title: "Ritmo de Migração Lento",
-          message: `Apenas ${metrics.completionRate.toFixed(0)}% concluído`,
-          action: "Reforçar equipe de suporte",
-          impact: "Possível atraso no cronograma",
+          title: "Ritmo de Migração Abaixo do Esperado",
+          message: `Apenas ${metrics.completionRate.toFixed(0)}% concluído - ritmo atual pode causar atraso`,
+          action: "Reforçar equipe de suporte com 2-3 técnicos adicionais e intensificar comunicação com lojas",
+          impact: "Possível atraso de 1 semana no cronograma se ritmo não acelerar",
+          urgency: "48 HORAS",
+          responsible: "Coordenação de Rollout",
+          estimatedCost: "R$ 15k em recursos adicionais",
         })
       }
-    } else {
-      if (metrics.errorRate > 10) {
+
+      if (metrics.errors > 0) {
+        alerts.push({
+          type: "warning",
+          title: "Erros Técnicos Detectados",
+          message: `${metrics.errors} loja(s) com erro técnico durante migração`,
+          action: "Investigar problemas técnicos e providenciar suporte especializado",
+          impact: "Possível necessidade de rollback em casos específicos",
+          urgency: "24 HORAS",
+          responsible: "Equipe Técnica",
+          estimatedCost: "R$ 5k-10k em suporte técnico",
+        })
+      }
+    } else if (isTesting) {
+      // Alertas específicos para TESTES DE INTEGRAÇÃO
+      if (metrics.errorRate > 15) {
         alerts.push({
           type: "critical",
-          title: "Qualidade Crítica",
-          message: `${metrics.errorRate.toFixed(0)}% de falhas técnicas`,
-          action: "PAUSAR novos testes imediatamente",
-          impact: "Risco de instabilidade em produção",
+          title: "Falhas Críticas na Integração VS-PDV",
+          message: `${metrics.errorRate.toFixed(0)}% de falhas técnicas (${metrics.errors} erros) indica problemas graves na integração`,
+          action: "PAUSAR todos os novos testes imediatamente e convocar equipe técnica para correção urgente",
+          impact: "Risco alto de instabilidade em produção, possível impacto em vendas dos restaurantes",
+          urgency: "IMEDIATA",
+          responsible: "Equipe Técnica + CTO",
+          estimatedCost: "R$ 30k-50k em correções urgentes",
+        })
+      } else if (metrics.errorRate > 10) {
+        alerts.push({
+          type: "critical",
+          title: "Qualidade Técnica Crítica",
+          message: `${metrics.errorRate.toFixed(0)}% de falhas técnicas acima do limite aceitável (5%)`,
+          action: "Pausar novos testes e revisar configurações de integração VS-PDV",
+          impact: "Risco médio de problemas em produção, necessário correção antes de continuar",
+          urgency: "24 HORAS",
+          responsible: "Equipe Técnica",
+          estimatedCost: "R$ 15k-25k em correções",
         })
       }
 
       if (metrics.errorRate === 0 && metrics.completionRate > 70) {
         alerts.push({
           type: "success",
-          title: "Qualidade Excelente",
-          message: "Zero erros técnicos detectados",
-          action: "Manter padrão e expandir testes",
-          impact: "Integração estável e confiável",
+          title: "Integração VS-PDV Estável e Confiável",
+          message: `Zero erros técnicos detectados em ${metrics.completed} testes concluídos`,
+          action: "Manter padrão de qualidade atual e expandir cobertura de testes para novos PDVs",
+          impact: "Integração estável e confiável, pronta para expansão em produção",
+          urgency: "MANTER",
+          responsible: "Coordenação de Testes",
+          estimatedCost: "Dentro do orçamento, ROI positivo",
+        })
+      } else if (metrics.errorRate < 5 && metrics.completionRate > 60) {
+        alerts.push({
+          type: "success",
+          title: "Qualidade dos Testes Excelente",
+          message: `${metrics.errorRate.toFixed(1)}% de erros - bem abaixo do limite de 5%`,
+          action: "Documentar melhores práticas e manter padrão de qualidade",
+          impact: "Processo de testes funcionando perfeitamente, alta confiabilidade",
+          urgency: "CONTINUAR",
+          responsible: "Coordenação de Testes",
+          estimatedCost: "Processo otimizado",
         })
       }
 
-      if (metrics.noResponseRate > 40) {
+      if (metrics.noResponseRate > 50) {
         alerts.push({
           type: "warning",
-          title: "Comunicação Deficiente",
-          message: `${metrics.noResponseRate.toFixed(0)}% sem retorno`,
-          action: "Implementar follow-up automático",
-          impact: "Atraso na validação dos testes",
+          title: "Comunicação Severamente Comprometida",
+          message: `${metrics.noResponseRate.toFixed(0)}% dos restaurantes sem retorno há mais de 72h`,
+          action: "Implementar canal de comunicação direto (WhatsApp/telefone) e follow-up automático diário",
+          impact: "Atraso significativo na validação dos testes, possível impacto no cronograma",
+          urgency: "48 HORAS",
+          responsible: "Coordenação de Testes + Atendimento",
+          estimatedCost: "R$ 8k-12k em recursos de comunicação",
+        })
+      } else if (metrics.noResponseRate > 40) {
+        alerts.push({
+          type: "warning",
+          title: "Comunicação com Restaurantes Deficiente",
+          message: `${metrics.noResponseRate.toFixed(0)}% sem retorno indica problemas de comunicação`,
+          action: "Melhorar follow-up e implementar canal direto de comunicação",
+          impact: "Atraso moderado na validação dos testes",
+          urgency: "72 HORAS",
+          responsible: "Coordenação de Testes",
+          estimatedCost: "R$ 5k em melhorias de comunicação",
+        })
+      }
+
+      if (metrics.pending > metrics.total * 0.4) {
+        alerts.push({
+          type: "warning",
+          title: "Alto Volume de Testes Pendentes",
+          message: `${metrics.pending} testes pendentes (${metrics.pendingRate.toFixed(0)}% do total)`,
+          action: "Priorizar execução dos testes pendentes e otimizar processo",
+          impact: "Possível gargalo no processo de validação",
+          urgency: "1 SEMANA",
+          responsible: "Coordenação de Testes",
+          estimatedCost: "R$ 3k-5k em otimização",
         })
       }
     }
 
-    return alerts
-  }, [executiveMetrics, isRollout])
+    // Alertas gerais baseados no horário
+    if (!isBusinessHours && alerts.some((a) => a.type === "critical")) {
+      alerts.unshift({
+        type: "critical",
+        title: "Alerta Fora do Horário Comercial",
+        message: "Situação crítica detectada fora do horário comercial",
+        action: "Acionar plantão técnico e notificar gerência via WhatsApp/telefone",
+        impact: "Necessário ação imediata mesmo fora do horário comercial",
+        urgency: "IMEDIATA",
+        responsible: "Plantão Técnico",
+        estimatedCost: "Custo de plantão aplicável",
+      })
+    }
+
+    return alerts.slice(0, 6) // Máximo 6 alertas para não sobrecarregar
+  }, [executiveMetrics, isRollout, isTesting])
 
   const handleExport = () => {
     try {
@@ -498,54 +617,236 @@ export function ExecutiveDashboard({ data, onBack }: ExecutiveDashboardProps) {
           </div>
         </div>
 
-        {/* Alertas Executivos */}
+        {/* Alertas Executivos Aprimorados */}
         {executiveAlerts.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {executiveAlerts.map((alert, index) => (
-              <Card
-                key={index}
-                className={`border-l-4 ${
-                  alert.type === "critical"
-                    ? "border-l-red-500 bg-red-50/50"
-                    : alert.type === "warning"
-                      ? "border-l-yellow-500 bg-yellow-50/50"
-                      : "border-l-green-500 bg-green-50/50"
-                } shadow-sm hover:shadow-md transition-all`}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start space-x-3">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        alert.type === "critical"
-                          ? "bg-red-100 text-red-600"
-                          : alert.type === "warning"
-                            ? "bg-yellow-100 text-yellow-600"
-                            : "bg-green-100 text-green-600"
-                      }`}
-                    >
-                      {alert.type === "critical" ? (
-                        <AlertTriangle className="w-4 h-4" />
-                      ) : alert.type === "warning" ? (
-                        <Clock className="w-4 h-4" />
-                      ) : (
-                        <CheckCircle className="w-4 h-4" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-slate-900 mb-1">{alert.title}</h4>
-                      <p className="text-sm text-slate-600 mb-2">{alert.message}</p>
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium text-slate-700">
-                          <Zap className="w-3 h-3 inline mr-1" />
-                          Ação: {alert.action}
-                        </p>
-                        <p className="text-xs text-slate-500">Impacto: {alert.impact}</p>
+          <div className="space-y-4">
+            {/* Header dos Alertas */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-slate-600" />
+                <h2 className="text-lg font-semibold text-slate-900">Alertas Executivos</h2>
+                <Badge variant="outline" className="text-xs">
+                  {executiveAlerts.length} {executiveAlerts.length === 1 ? "alerta" : "alertas"}
+                </Badge>
+              </div>
+              <div className="text-xs text-slate-500">
+                Atualizado: {new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              </div>
+            </div>
+
+            {/* Grid de Alertas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {executiveAlerts.map((alert, index) => (
+                <Card
+                  key={index}
+                  className={`border-l-4 ${
+                    alert.type === "critical"
+                      ? "border-l-red-500 bg-red-50/50 shadow-red-100"
+                      : alert.type === "warning"
+                        ? "border-l-yellow-500 bg-yellow-50/50 shadow-yellow-100"
+                        : "border-l-green-500 bg-green-50/50 shadow-green-100"
+                  } shadow-lg hover:shadow-xl transition-all duration-300 group`}
+                >
+                  <CardContent className="p-5">
+                    <div className="flex items-start space-x-4">
+                      {/* Ícone do Alerta */}
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          alert.type === "critical"
+                            ? "bg-red-100 text-red-600"
+                            : alert.type === "warning"
+                              ? "bg-yellow-100 text-yellow-600"
+                              : "bg-green-100 text-green-600"
+                        }`}
+                      >
+                        {alert.type === "critical" ? (
+                          <AlertTriangle className="w-5 h-5" />
+                        ) : alert.type === "warning" ? (
+                          <Clock className="w-5 h-5" />
+                        ) : (
+                          <CheckCircle className="w-5 h-5" />
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        {/* Header do Alerta */}
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-slate-900 truncate">{alert.title}</h4>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${
+                              alert.type === "critical"
+                                ? "border-red-300 text-red-700"
+                                : alert.type === "warning"
+                                  ? "border-yellow-300 text-yellow-700"
+                                  : "border-green-300 text-green-700"
+                            }`}
+                          >
+                            {alert.type === "critical" ? "CRÍTICO" : alert.type === "warning" ? "ATENÇÃO" : "SUCESSO"}
+                          </Badge>
+                        </div>
+
+                        {/* Mensagem Principal */}
+                        <p className="text-sm text-slate-700 mb-3 leading-relaxed">{alert.message}</p>
+
+                        {/* Seção de Ação */}
+                        <div className="space-y-2 mb-3">
+                          <div className="flex items-start space-x-2">
+                            <Zap className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-xs font-medium text-slate-800 mb-1">Ação Recomendada:</p>
+                              <p className="text-xs text-slate-600 leading-relaxed">{alert.action}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Seção de Impacto */}
+                        <div className="space-y-2 mb-3">
+                          <div className="flex items-start space-x-2">
+                            <Target className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-xs font-medium text-slate-800 mb-1">Impacto no Negócio:</p>
+                              <p className="text-xs text-slate-600 leading-relaxed">{alert.impact}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Informações Adicionais */}
+                        <div className="pt-3 border-t border-slate-200">
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <p className="font-medium text-slate-700 mb-1">Prazo:</p>
+                              <p className="text-slate-600">
+                                {alert.type === "critical"
+                                  ? "Imediato"
+                                  : alert.type === "warning"
+                                    ? "24-48h"
+                                    : "1 semana"}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-medium text-slate-700 mb-1">Responsável:</p>
+                              <p className="text-slate-600">
+                                {isRollout
+                                  ? alert.type === "critical"
+                                    ? "Gerência Regional"
+                                    : "Coord. Rollout"
+                                  : alert.type === "critical"
+                                    ? "Equipe Técnica"
+                                    : "Coord. Testes"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Métricas do Alerta (se disponível) */}
+                        {(alert.type === "critical" || alert.type === "warning") && (
+                          <div className="mt-3 pt-3 border-t border-slate-200">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-600">Situação atual:</span>
+                              <div className="flex items-center space-x-2">
+                                {isRollout ? (
+                                  <>
+                                    <span className="font-medium text-slate-800">
+                                      {executiveMetrics.statusBreakdown.noResponseRate.toFixed(0)}% sem retorno
+                                    </span>
+                                    <div className="w-12 h-1.5 bg-slate-200 rounded-full">
+                                      <div
+                                        className={`h-1.5 rounded-full ${
+                                          executiveMetrics.statusBreakdown.noResponseRate > 25
+                                            ? "bg-red-500"
+                                            : "bg-yellow-500"
+                                        }`}
+                                        style={{
+                                          width: `${Math.min(100, executiveMetrics.statusBreakdown.noResponseRate * 2)}%`,
+                                        }}
+                                      />
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="font-medium text-slate-800">
+                                      {executiveMetrics.statusBreakdown.errorRate.toFixed(0)}% erros
+                                    </span>
+                                    <div className="w-12 h-1.5 bg-slate-200 rounded-full">
+                                      <div
+                                        className={`h-1.5 rounded-full ${
+                                          executiveMetrics.statusBreakdown.errorRate > 10
+                                            ? "bg-red-500"
+                                            : "bg-yellow-500"
+                                        }`}
+                                        style={{
+                                          width: `${Math.min(100, executiveMetrics.statusBreakdown.errorRate * 5)}%`,
+                                        }}
+                                      />
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Botão de Ação Rápida */}
+                        {alert.type === "critical" && (
+                          <div className="mt-4">
+                            <Button
+                              size="sm"
+                              className={`w-full text-xs ${
+                                alert.type === "critical"
+                                  ? "bg-red-600 hover:bg-red-700"
+                                  : "bg-yellow-600 hover:bg-yellow-700"
+                              }`}
+                              onClick={() => {
+                                toast.success(`Ação "${alert.action}" registrada para execução imediata!`)
+                              }}
+                            >
+                              <Zap className="w-3 h-3 mr-1" />
+                              Executar Ação
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Resumo dos Alertas */}
+            <Card className="bg-slate-50 border-slate-200">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                      <span className="text-sm text-slate-600">
+                        {executiveAlerts.filter((a) => a.type === "critical").length} críticos
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                      <span className="text-sm text-slate-600">
+                        {executiveAlerts.filter((a) => a.type === "warning").length} atenção
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                      <span className="text-sm text-slate-600">
+                        {executiveAlerts.filter((a) => a.type === "success").length} sucessos
+                      </span>
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  <div className="text-xs text-slate-500">
+                    Próxima atualização:{" "}
+                    {new Date(Date.now() + 15 * 60 * 1000).toLocaleTimeString("pt-BR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
